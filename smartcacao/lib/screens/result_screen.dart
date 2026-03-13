@@ -1,18 +1,35 @@
 import 'package:flutter/material.dart';
 
-class ResultScreen extends StatelessWidget {
+class ResultScreen extends StatefulWidget {
   final Map<String, dynamic> result;
+  final String imagePath;
 
-  const ResultScreen({super.key, required this.result});
+  const ResultScreen({
+    super.key,
+    required this.result,
+    required this.imagePath,
+  });
+
+  @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // TODO: Implement storage saving when StorageService is ready
+    // For now, result is displayed, storage can be added later
+  }
 
   @override
   Widget build(BuildContext context) {
-    final success = result['success'] ?? false;
-    final fermentationStatus = result['fermentationStatus'] ?? 'unknown';
-    final statistics = result['statistics'] as Map<String, dynamic>? ?? {};
-    final confidence = result['confidence'] as Map<String, dynamic>? ?? {};
-    final recommendation = result['recommendation'] ?? '';
-    final detections = result['detections'] as List<dynamic>? ?? [];
+    final success = widget.result['success'] ?? false;
+    final fermentationStatus = widget.result['fermentationStatus'] ?? 'unknown';
+    final statistics = widget.result['statistics'] as Map<String, dynamic>? ?? {};
+    final confidence = widget.result['confidence'] as Map<String, dynamic>? ?? {};
+    final recommendation = widget.result['recommendation'] ?? '';
+    final detections = widget.result['detections'] as List<dynamic>? ?? [];
 
     Color statusColor = Colors.grey;
     IconData statusIcon = Icons.help_outline;
@@ -45,7 +62,7 @@ class ResultScreen extends StatelessWidget {
                 recommendation,
                 detections,
               )
-            : _buildFailureView(context, result['message'] ?? 'Unknown error'),
+            : _buildFailureView(context, widget.result['message'] ?? 'Unknown error'),
       ),
     );
   }

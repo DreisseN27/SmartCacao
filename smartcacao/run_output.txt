@@ -1,0 +1,27 @@
+Launching lib\main.dart on sdk gphone64 x86 64 in debug mode...
+Running Gradle task 'assembleDebug'...                              3.4s
+ΓêÜ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...        1,533ms
+D/FlutterJNI( 5432): Beginning load of flutter...
+D/FlutterJNI( 5432): flutter (null) was loaded normally!
+I/flutter ( 5432): [IMPORTANT:flutter/shell/platform/android/android_context_gl_impeller.cc(104)] Using the Impeller rendering backend (OpenGLES).
+Syncing files to device sdk gphone64 x86 64...                     110ms
+
+Flutter run key commands.
+r Hot reload. 
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on sdk gphone64 x86 64 is available at: http://127.0.0.1:52623/nps3sZsAHwE=/
+The Flutter DevTools debugger and profiler on sdk gphone64 x86 64 is available at: http://127.0.0.1:52623/nps3sZsAHwE=/devtools/?uri=ws://127.0.0.1:52623/nps3sZsAHwE=/ws
+I/Choreographer( 5432): Skipped 48 frames!  The application may be doing too much work on its main thread.
+I/WindowExtensionsImpl( 5432): Initializing Window Extensions, vendor API level=9, activity embedding enabled=true
+I/mple.smartcacao( 5432): Compiler allocated 5042KB to compile void android.view.ViewRootImpl.performTraversals()
+D/WindowLayoutComponentImpl( 5432): Register WindowLayoutInfoListener on Context=com.example.smartcacao.MainActivity@c4347a7, of which baseContext=android.app.ContextImpl@56d8ef9
+D/InsetsController( 5432): hide(ime(), fromIme=false)
+I/ImeTracker( 5432): com.example.smartcacao:de1f863c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+D/ProfileInstaller( 5432): Installing profile for com.example.smartcacao
+Lost connection to device.

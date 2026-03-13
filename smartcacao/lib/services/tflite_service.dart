@@ -1,23 +1,47 @@
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:flutter/services.dart';
 import '../utils/image_utils.dart';
 import '../models/detection.dart';
 
 class TFLiteService {
-  Interpreter? interpreter;
+  static const platform = MethodChannel('com.example.smartcacao/model');
   bool _isModelLoaded = false;
+  String _lastError = '';
 
-  /// Load the TFLite model from assets
+  /// Get the last error that occurred
+  String get lastError => _lastError;
+
+  /// Load the model from assets via platform channel
   Future<bool> loadModel() async {
     try {
       if (_isModelLoaded) return true;
       
-      interpreter = await Interpreter.fromAsset(
-        'assets/models/best.tflite',
-      );
+      print("=== LOADING MODEL FROM NATIVE CODE ===");
       
-      _isModelLoaded = true;
-      return true;
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>('loadModel');
+      final success = result?['success'] as bool? ?? false;
+      final errorMessage = result?['error'] as String?;
+      
+      if (success) {
+        _isModelLoaded = true;
+        _lastError = '';
+        print('✓✓✓ Model loaded successfully ✓✓✓');
+      } else {
+        final error = errorMessage ?? 'Unknown error';
+        _lastError = error;
+        _isModelLoaded = false;
+        print('✗✗✗ Failed to load model ✗✗✗');
+        print('Error details: $error');
+      }
+      
+      return _isModelLoaded;
+    } on PlatformException catch (e) {
+      _lastError = "Platform Error: ${e.code} - ${e.message}";
+      print('✗ Platform exception: $_lastError');
+      _isModelLoaded = false;
+      return false;
     } catch (e) {
+      _lastError = "Error: $e";
+      print('✗ Exception loading model: $_lastError');
       _isModelLoaded = false;
       return false;
     }
@@ -26,33 +50,60 @@ class TFLiteService {
   /// Check if model is loaded
   bool get isModelLoaded => _isModelLoaded;
 
-  /// Run inference on an image
+  /// Run inference on an image via platform channel
   Future<List<Detection>> runInference(String imagePath) async {
-    if (interpreter == null || !_isModelLoaded) {
+    if (!_isModelLoaded) {
       throw Exception('Model not loaded. Call loadModel() first.');
     }
 
     try {
-      // Preprocess the image
-      final imageData = await ImageUtils.preprocessImage(imagePath);
-      if (imageData.isEmpty) {
-        throw Exception('Failed to preprocess image');
+      // Call native code to run inference
+      final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
+        'runInference',
+        {'imagePath': imagePath},
+      );
+      
+      if (result?['success'] == false) {
+        throw Exception(result?['error'] ?? 'Unknown error');
       }
 
-      // Prepare input tensor
-      final input = _reshapeInput(imageData);
-
-      // Run inference
-      final output = List<dynamic>.filled(1, null);
-      interpreter!.run(input, output);
-
-      // Parse output and convert to Detection objects
-      final detections = _parseOutput(output[0]);
-
+      // Parse detections from result
+      final detections = _parseDetections(result);
       return detections;
     } catch (e) {
+      print('Inference error: $e');
       rethrow;
     }
+  }
+
+  /// Parse detection results from native code
+  List<Detection> _parseDetections(Map<dynamic, dynamic>? result) {
+    final detections = <Detection>[];
+    
+    try {
+      if (result == null) return detections;
+      
+      final detectionsList = result['detections'] as List<dynamic>? ?? [];
+      
+      for (final det in detectionsList) {
+        if (det is Map<dynamic, dynamic>) {
+          detections.add(
+            Detection(
+              label: det['label'] as String? ?? 'unknown',
+              confidence: (det['confidence'] as num?)?.toDouble() ?? 0.0,
+              x: (det['x'] as num?)?.toDouble() ?? 0.0,
+              y: (det['y'] as num?)?.toDouble() ?? 0.0,
+              width: (det['width'] as num?)?.toDouble() ?? 0.0,
+              height: (det['height'] as num?)?.toDouble() ?? 0.0,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error parsing detections: $e');
+    }
+    
+    return detections;
   }
 
   /// Get fermentation analysis from detections
@@ -93,7 +144,7 @@ class TFLiteService {
       String recommendation = '';
       if (mostCommonStatus == 'under_fermented') {
         recommendation = 
-            'Continue fermentation for ${"2-3"} more days. Monitor moisture levels.';
+            'Continue fermentation for 2-3 more days. Monitor moisture levels.';
       } else if (mostCommonStatus == 'properly_fermented') {
         recommendation = 'Beans are ready for drying. Excellent fermentation!';
       } else if (mostCommonStatus == 'over_fermented') {
@@ -129,103 +180,8 @@ class TFLiteService {
     }
   }
 
-  /// Reshape input data to match model input shape
-  List<Object> _reshapeInput(List<List<List<List<double>>>> imageData) {
-    // Convert to the format expected by the TFLite interpreter
-    // This assumes [1, 640, 640, 3] input shape
-    // Convert to flat list of floats
-    final flatInput = <double>[];
-    for (final batch in imageData) {
-      for (final row in batch) {
-        for (final pixel in row) {
-          for (final channel in pixel) {
-            flatInput.add(channel);
-          }
-        }
-      }
-    }
-
-    // Create a tensor with proper shape
-    return [flatInput];
-  }
-
-  /// Parse model output to Detection objects
-  List<Detection> _parseOutput(dynamic rawOutput) {
-    final detections = <Detection>[];
-    
-    try {
-      // Handle different output types
-      List<dynamic> predictions = [];
-      
-      if (rawOutput is List<List<dynamic>>) {
-        // Output is already a list of predictions
-        predictions = rawOutput.cast<dynamic>();
-      } else if (rawOutput is List<dynamic>) {
-        predictions = rawOutput;
-      } else {
-        return detections;
-      }
-
-      // Class names for cacao fermentation
-      const classNames = [
-        'under_fermented',
-        'properly_fermented',
-        'over_fermented',
-      ];
-
-      // Parse each prediction (confidence threshold: 0.5)
-      for (int i = 0; i < predictions.length; i++) {
-        final pred = predictions[i];
-        
-        if (pred is! List || pred.length < 5) continue;
-
-        // Extract bbox and confidence
-        final x = (pred[0] as num).toDouble();
-        final y = (pred[1] as num).toDouble();
-        final w = (pred[2] as num).toDouble();
-        final h = (pred[3] as num).toDouble();
-        final confidence = (pred[4] as num).toDouble();
-
-        // Skip low confidence detections
-        if (confidence < 0.45) continue;
-
-        // Find best class
-        int classIdx = 0;
-        double maxClassProb = 0.0;
-        
-        for (int j = 5; j < pred.length && j - 5 < classNames.length; j++) {
-          final classProb = (pred[j] as num).toDouble();
-          if (classProb > maxClassProb) {
-            maxClassProb = classProb;
-            classIdx = j - 5;
-          }
-        }
-
-        final label = classIdx < classNames.length 
-            ? classNames[classIdx]
-            : 'unknown';
-
-        detections.add(
-          Detection(
-            label: label,
-            confidence: confidence,
-            x: x,
-            y: y,
-            width: w,
-            height: h,
-          ),
-        );
-      }
-    } catch (e) {
-      // Error parsing output - return empty detections
-    }
-
-    return detections;
-  }
-
   /// Dispose resources
   void dispose() {
-    interpreter?.close();
     _isModelLoaded = false;
   }
 }
