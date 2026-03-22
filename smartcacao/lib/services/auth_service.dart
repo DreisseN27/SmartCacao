@@ -1,53 +1,77 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../utils/constants.dart';
 
 class AuthService {
-  final storage = FlutterSecureStorage();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Register user
-  Future<Map<String, dynamic>> register(String name, String email, String password) async {
-    final response = await http.post(
-      Uri.parse('${Constants.baseUrl}/register'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'name': name, 'email': email, 'password': password}),
+  Future<UserCredential> register({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
     );
 
-    final data = jsonDecode(response.body);
+    await credential.user?.updateDisplayName(name);
+    await credential.user?.sendEmailVerification();
 
-    if (response.statusCode == 200) {
-      // Save token securely
-      await storage.write(key: 'token', value: data['token']);
-    }
-
-    return data;
+    return credential;
   }
 
-  // Login user
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<UserCredential> login({
+    required String email,
+    required String password,
+  }) async {
+    return _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+  }
+
+  Future<void> sendVerificationAgain() async {
+    final user = _auth.currentUser;
+    if (user != null && !user.emailVerified) {
+      await user.sendEmailVerification();
+    }
+  }
+
+  Future<bool> reloadAndCheckVerified() async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    await user.reload();
+    return FirebaseAuth.instance.currentUser?.emailVerified ?? false;
+  }
+
+  Future<void> syncVerifiedUserToLaravel() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    final idToken = await user.getIdToken();
+
     final response = await http.post(
-      Uri.parse('${Constants.baseUrl}/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      Uri.parse('${Constants.baseUrl}/firebase/sync-user'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $idToken',
+      },
+      body: jsonEncode({
+        'name': user.displayName ?? '',
+      }),
     );
 
-    final data = jsonDecode(response.body);
-
-    if (response.statusCode == 200) {
-      await storage.write(key: 'token', value: data['token']);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to sync user to backend: ${response.body}');
     }
-
-    return data;
   }
 
-  // Logout
   Future<void> logout() async {
-    await storage.delete(key: 'token');
-  }
-
-  // Get token
-  Future<String?> getToken() async {
-    return await storage.read(key: 'token');
+    await _auth.signOut();
   }
 }

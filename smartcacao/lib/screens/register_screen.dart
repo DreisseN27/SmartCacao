@@ -1,5 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'verify_email_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -14,17 +16,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
   final AuthService authService = AuthService();
+
   bool loading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
+  @override
+  void dispose() {
+    nameController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    confirmPasswordController.dispose();
+    super.dispose();
+  }
+
   bool isStrongPassword(String password) {
-    final regex =
-        RegExp(r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#\$&*~]).{8,}$');
+    final regex = RegExp(r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#\$&*~]).{8,}$');
     return regex.hasMatch(password);
   }
 
-  void register() async {
+  String getFirebaseRegisterError(Object e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          return 'That email is already registered';
+        case 'invalid-email':
+          return 'Please enter a valid email address';
+        case 'weak-password':
+          return 'Password is too weak';
+        case 'operation-not-allowed':
+          return 'Email/password sign-in is not enabled in Firebase';
+        default:
+          return e.message ?? 'Registration failed';
+      }
+    }
+
+    return e.toString();
+  }
+
+  Future<void> register() async {
     final name = nameController.text.trim();
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
@@ -50,8 +80,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!isStrongPassword(password)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text(
-                'Password must be at least 8 characters with letters, numbers and symbols')),
+          content: Text(
+            'Password must be at least 8 characters with letters, numbers and symbols',
+          ),
+        ),
       );
       return;
     }
@@ -66,26 +98,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => loading = true);
 
     try {
-      final response = await authService.register(name, email, password);
+      await authService.register(
+        name: name,
+        email: email,
+        password: password,
+      );
+
+      if (!mounted) return;
       setState(() => loading = false);
 
-      if (response.containsKey('message')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'])),
-        );
-      }
-
-      if (response.containsKey('token')) {
-        // Registration successful → go back to login only
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account created! Please login.')),
-        );
-        Navigator.pop(context);
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const VerifyEmailScreen()),
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to connect to server')),
+        SnackBar(content: Text(getFirebaseRegisterError(e))),
       );
     }
   }
@@ -111,6 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(labelText: 'Email'),
                 ),
                 const SizedBox(height: 12),
@@ -147,7 +178,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       onPressed: () {
                         setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
+                          _obscureConfirmPassword =
+                              !_obscureConfirmPassword;
                         });
                       },
                     ),

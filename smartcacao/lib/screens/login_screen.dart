@@ -1,8 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/auth_service.dart';
 import 'home_screen.dart';
 import 'register_screen.dart';
+import 'verify_email_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,12 +15,41 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-  final storage = const FlutterSecureStorage();
   final AuthService authService = AuthService();
+
   bool loading = false;
   bool _obscurePassword = true;
 
-  void login() async {
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+
+  String getFirebaseLoginError(Object e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'invalid-email':
+          return 'Please enter a valid email address';
+        case 'user-not-found':
+          return 'No account found for that email';
+        case 'wrong-password':
+        case 'invalid-credential':
+          return 'Incorrect email or password';
+        case 'user-disabled':
+          return 'This account has been disabled';
+        case 'too-many-requests':
+          return 'Too many attempts. Please try again later';
+        default:
+          return e.message ?? 'Login failed';
+      }
+    }
+
+    return e.toString();
+  }
+
+  Future<void> login() async {
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
 
@@ -40,29 +70,36 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => loading = true);
 
     try {
-      final response = await authService.login(email, password);
-      setState(() => loading = false);
+      final credential = await authService.login(
+        email: email,
+        password: password,
+      );
 
-      if (response.containsKey('token')) {
-        // Save token
-        await storage.write(key: 'token', value: response['token']);
+      if (!mounted) return;
+
+      if (!(credential.user?.emailVerified ?? false)) {
+        setState(() => loading = false);
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          MaterialPageRoute(builder: (_) => const VerifyEmailScreen()),
         );
-      } else if (response.containsKey('message')) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'])),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Login failed: Wrong Email or Password')),
-        );
+        return;
       }
+
+      await authService.syncVerifiedUserToLaravel();
+
+      if (!mounted) return;
+      setState(() => loading = false);
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
     } catch (e) {
+      if (!mounted) return;
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to connect to server')),
+        SnackBar(content: Text(getFirebaseLoginError(e))),
       );
     }
   }
@@ -83,9 +120,8 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 TextField(
                   controller: emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Email'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -119,13 +155,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text('Login'),
                       ),
                 TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => const RegisterScreen()),
-                    );
-                  },
+                  onPressed: loading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RegisterScreen(),
+                            ),
+                          );
+                        },
                   child: const Text('Don\'t have an account? Register'),
                 ),
               ],
