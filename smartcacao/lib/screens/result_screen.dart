@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/storage_service.dart';
+import '../models/detection.dart';
 
 class ResultScreen extends StatefulWidget {
   final Map<String, dynamic> result;
@@ -15,11 +17,71 @@ class ResultScreen extends StatefulWidget {
 }
 
 class _ResultScreenState extends State<ResultScreen> {
+  late StorageService storageService;
+
   @override
   void initState() {
     super.initState();
-    // TODO: Implement storage saving when StorageService is ready
-    // For now, result is displayed, storage can be added later
+    storageService = StorageService();
+    
+    // Save detection to history
+    _saveDetection();
+  }
+
+  Future<void> _saveDetection() async {
+    try {
+      final success = widget.result['success'] ?? false;
+      if (!success) return;
+
+      final fermentationStatus = widget.result['fermentationStatus'] ?? 'unknown';
+      final statistics = widget.result['statistics'] as Map<String, dynamic>? ?? {};
+      final confidence = widget.result['confidence'] as Map<String, dynamic>? ?? {};
+      final recommendation = widget.result['recommendation'] ?? '';
+      final detections = widget.result['detections'] as List<dynamic>? ?? [];
+
+      // Convert dynamic detections to Detection objects
+      List<Detection> detectionList = [];
+      try {
+        for (final det in detections) {
+          if (det is Detection) {
+            detectionList.add(det);
+          }
+        }
+      } catch (e) {
+        print('Error converting detections: $e');
+      }
+
+      // Calculate average confidence safely
+      double averageConfidence = 0.0;
+      try {
+        final avgValue = confidence['average'];
+        if (avgValue != null) {
+          averageConfidence = (avgValue as num).toDouble();
+        }
+      } catch (e) {
+        print('Error extracting confidence: $e');
+      }
+
+      // Save to storage with error handling
+      try {
+        await storageService.saveDetection(
+          originalImagePath: widget.imagePath,
+          fermentationStatus: fermentationStatus,
+          underFermentedCount: statistics['underFermented'] ?? 0,
+          properlyFermentedCount: statistics['properlyFermented'] ?? 0,
+          overFermentedCount: statistics['overFermented'] ?? 0,
+          averageConfidence: averageConfidence,
+          detections: detectionList,
+          recommendation: recommendation,
+        );
+
+        print('Detection saved to history successfully');
+      } catch (storageError) {
+        print('Storage error: $storageError');
+      }
+    } catch (e) {
+      print('Error in detection save process: $e');
+    }
   }
 
   @override
