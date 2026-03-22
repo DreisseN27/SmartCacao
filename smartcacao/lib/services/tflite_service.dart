@@ -79,6 +79,7 @@ class TFLiteService {
   /// Parse detection results from native code
   List<Detection> _parseDetections(Map<dynamic, dynamic>? result) {
     final detections = <Detection>[];
+    const double confidenceThreshold = 0.5; // Filter out detections below 50% confidence
     
     try {
       if (result == null) return detections;
@@ -87,16 +88,21 @@ class TFLiteService {
       
       for (final det in detectionsList) {
         if (det is Map<dynamic, dynamic>) {
-          detections.add(
-            Detection(
-              label: det['label'] as String? ?? 'unknown',
-              confidence: (det['confidence'] as num?)?.toDouble() ?? 0.0,
-              x: (det['x'] as num?)?.toDouble() ?? 0.0,
-              y: (det['y'] as num?)?.toDouble() ?? 0.0,
-              width: (det['width'] as num?)?.toDouble() ?? 0.0,
-              height: (det['height'] as num?)?.toDouble() ?? 0.0,
-            ),
-          );
+          final confidence = (det['confidence'] as num?)?.toDouble() ?? 0.0;
+          
+          // Only include detections with sufficient confidence
+          if (confidence >= confidenceThreshold) {
+            detections.add(
+              Detection(
+                label: det['label'] as String? ?? 'unknown',
+                confidence: confidence,
+                x: (det['x'] as num?)?.toDouble() ?? 0.0,
+                y: (det['y'] as num?)?.toDouble() ?? 0.0,
+                width: (det['width'] as num?)?.toDouble() ?? 0.0,
+                height: (det['height'] as num?)?.toDouble() ?? 0.0,
+              ),
+            );
+          }
         }
       }
     } catch (e) {

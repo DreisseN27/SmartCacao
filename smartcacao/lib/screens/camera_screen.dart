@@ -19,6 +19,8 @@ class _CameraScreenState extends State<CameraScreen> {
   late Future<void> initializeControllerFuture;
   final TFLiteService tfliteService = TFLiteService();
   bool isProcessing = false;
+  bool isInferenceBusy = false;
+  bool isLiveDetectionMode = true;
   List<Detection> liveDetections = [];
   int frameCount = 0;
   double fps = 0;
@@ -77,9 +79,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
       initializeControllerFuture = controller!.initialize();
       
-      // Start live detection after initialization
+      // Start live detection after initialization (if in live mode)
       initializeControllerFuture.then((_) {
-        if (mounted && tfliteService.isModelLoaded) {
+        if (mounted && tfliteService.isModelLoaded && isLiveDetectionMode) {
           startLiveDetection();
         }
       });
@@ -97,8 +99,14 @@ class _CameraScreenState extends State<CameraScreen> {
   void startLiveDetection() {
     try {
       controller?.startImageStream((CameraImage image) async {
-        // Process every 3rd frame to balance performance
-        if (frameCount % 3 == 0) {
+        // Only process frames if still in live mode
+        if (!isLiveDetectionMode) return;
+        
+        // Skip frame if inference is still busy (prevent frame queue buildup)
+        if (isInferenceBusy) return;
+        
+        // Process every 2nd frame for better performance (still ~15 FPS detection)
+        if (frameCount % 2 == 0) {
           await processFrame(image);
         }
         frameCount++;
@@ -120,8 +128,34 @@ class _CameraScreenState extends State<CameraScreen> {
     }
   }
 
+  void toggleDetectionMode() async {
+    setState(() {
+      isLiveDetectionMode = !isLiveDetectionMode;
+      if (!isLiveDetectionMode) {
+        liveDetections = []; // Clear detections when switching to capture mode
+      }
+    });
+    
+    if (isLiveDetectionMode) {
+      // Switch to live mode - start streaming
+      if (mounted && tfliteService.isModelLoaded) {
+        startLiveDetection();
+      }
+    } else {
+      // Switch to capture mode - stop streaming
+      try {
+        await controller?.stopImageStream();
+      } catch (e) {
+        print('Error stopping image stream: $e');
+      }
+    }
+  }
+
   Future<void> processFrame(CameraImage image) async {
-    if (!tfliteService.isModelLoaded) return;
+    if (!tfliteService.isModelLoaded || !isLiveDetectionMode) return;
+    
+    // Mark as busy to prevent frame queue buildup
+    isInferenceBusy = true;
 
     try {
       // Convert CameraImage to image file
@@ -132,20 +166,38 @@ class _CameraScreenState extends State<CameraScreen> {
       try {
         final detections = await tfliteService.runInference(imagePath);
         
-        if (mounted) {
+        if (mounted && isLiveDetectionMode) {
           setState(() {
             liveDetections = detections;
           });
         }
 
-        // Clean up temp file
-        File(imagePath).deleteSync();
+        // Clean up temp file safely
+        try {
+          final file = File(imagePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          print('Failed to delete temp file: $e');
+        }
       } catch (e) {
         print('Inference error: $e');
-        File(imagePath).deleteSync();
+        // Clean up temp file on error
+        try {
+          final file = File(imagePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (deleteError) {
+          print('Failed to delete temp file on error: $deleteError');
+        }
       }
     } catch (e) {
       print('Frame processing error: $e');
+    } finally {
+      // Mark as no longer busy
+      isInferenceBusy = false;
     }
   }
 
@@ -200,9 +252,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
       int count = 0;
       for (int y = 0; y < height; y++) {
-        int uvPixelStride = pixelStride1;
-        int index = y * width;
-
         for (int x = 0; x < width; x++) {
           final int uvIndex = (y >> 1) * (width >> 1) + (x >> 1);
           final int yValue = plane0.bytes[y * plane0.bytesPerRow + x] & 0xff;
@@ -230,7 +279,6 @@ class _CameraScreenState extends State<CameraScreen> {
     const int cy = 298;
     const int cu = -100;
     const int cv = 208;
-    const int cgu = -208;
     const int cgv = -100;
 
     int r = (cy * y + cv * v) >> 8;
@@ -303,9 +351,31 @@ class _CameraScreenState extends State<CameraScreen> {
 
   @override
   void dispose() {
-    controller?.stopImageStream().catchError((_) {});
-    controller?.dispose();
-    tfliteService.dispose();
+    // Stop live detection first
+    isLiveDetectionMode = false;
+    liveDetections.clear();
+    
+    // Stop image streaming
+    try {
+      controller?.stopImageStream().catchError((_) {});
+    } catch (e) {
+      print('Error stopping image stream: $e');
+    }
+    
+    // Dispose controller
+    try {
+      controller?.dispose();
+    } catch (e) {
+      print('Error disposing controller: $e');
+    }
+    
+    // Dispose TFLite service
+    try {
+      tfliteService.dispose();
+    } catch (e) {
+      print('Error disposing TFLite service: $e');
+    }
+    
     super.dispose();
   }
 
@@ -319,8 +389,42 @@ class _CameraScreenState extends State<CameraScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Cacao Detection'),
+        title: Text(isLiveDetectionMode ? 'Live Detection' : 'Single Capture'),
         elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha((0.2 * 255).toInt()),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: GestureDetector(
+                  onTap: toggleDetectionMode,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isLiveDetectionMode ? Icons.videocam : Icons.camera_alt,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        isLiveDetectionMode ? 'LIVE' : 'CAPTURE',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -329,78 +433,83 @@ class _CameraScreenState extends State<CameraScreen> {
               future: initializeControllerFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.done) {
-                  return Stack(
-                    children: [
-                      CameraPreview(controller!),
-                      // Detection overlay
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: DetectionPainter(liveDetections),
-                        ),
-                      ),
-                      // Grid overlay
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: GridPainter(),
-                        ),
-                      ),
-                      // Center guide circle
-                      Center(
-                        child: Container(
-                          width: 200,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withAlpha((0.7 * 255).toInt()),
-                              width: 2,
+                  return SizedBox.expand(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        CameraPreview(controller!),
+                        // Detection overlay (only in live mode)
+                        if (isLiveDetectionMode)
+                          Positioned.fill(
+                            child: CustomPaint(
+                              painter: DetectionPainter(liveDetections),
                             ),
                           ),
-                          child: const Icon(
-                            Icons.grain,
-                            size: 60,
-                            color: Colors.white54,
+                        // Grid overlay
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: GridPainter(),
                           ),
                         ),
-                      ),
-                      // Detection stats panel
-                      Positioned(
-                        top: 16,
-                        left: 16,
-                        right: 16,
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withAlpha((0.6 * 255).toInt()),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Live Detections: ${liveDetections.length}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                ),
+                        // Center guide circle
+                        Center(
+                          child: Container(
+                            width: 200,
+                            height: 200,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withAlpha((0.7 * 255).toInt()),
+                                width: 2,
                               ),
-                              if (liveDetections.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Text(
-                                    'Classes: ${_getClassBreakdown()}',
+                            ),
+                            child: const Icon(
+                              Icons.grain,
+                              size: 60,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                        // Detection stats panel (only in live mode)
+                        if (isLiveDetectionMode)
+                          Positioned(
+                            top: 16,
+                            left: 16,
+                            right: 16,
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withAlpha((0.6 * 255).toInt()),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Live Detections: ${liveDetections.length}',
                                     style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 12,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
                                     ),
                                   ),
-                                ),
-                            ],
+                                  if (liveDetections.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Text(
+                                        'Classes: ${_getClassBreakdown()}',
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   );
                 } else {
                   return const Center(child: CircularProgressIndicator());
@@ -413,9 +522,12 @@ class _CameraScreenState extends State<CameraScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                const Text(
-                  'Position cacao beans within the circle',
-                  style: TextStyle(
+                Text(
+                  isLiveDetectionMode
+                      ? 'Position cacao beans within the circle\n(Real-time detection enabled)'
+                      : 'Position cacao beans within the circle\n(Tap Capture to analyze)',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                   ),
