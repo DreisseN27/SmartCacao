@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "791253354174",
+    "project_id": "smartcacao-8e955",
+    "storage_bucket": "smartcacao-8e955.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:791253354174:android:c195b043e959435e7200ef",
+        "android_client_info": {
+          "package_name": "com.example.smartcacao"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDYye9jio_unX7n8cciHD7Fw53nZFUSZH4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

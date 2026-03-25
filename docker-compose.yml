@@ -1,0 +1,48 @@
+
+
+services:
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: smartcacao_app
+    working_dir: /var/www
+    volumes:
+      - ./backend:/var/www
+    networks:
+      - smartcacao_network
+
+  webserver:
+    image: nginx:alpine
+    container_name: smartcacao_nginx
+    ports:
+      - "8000:80"
+    volumes:
+      - ./backend:/var/www
+      - ./backend/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app
+    networks:
+      - smartcacao_network
+
+  db:
+    image: mysql:8.0
+    container_name: smartcacao_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: smartcacao
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: smartcacao_user
+      MYSQL_PASSWORD: smartcacao_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      - smartcacao_network
+
+networks:
+  smartcacao_network:
+
+volumes:
+  dbdata:
