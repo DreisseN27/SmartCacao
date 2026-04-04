@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Camera permission for capturing images -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- File access permissions for storing detection results -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
+
     <application
         android:label="smartcacao"
         android:name="${applicationName}"

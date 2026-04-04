@@ -1,9 +1,0 @@
-path: dataset  # root directory
-train: images/train  # train images (relative to path)
-val: images/val      # val images (relative to path)
-
-nc: 3  # number of classes
-names:
-  0: under_fermented
-  1: properly_fermented
-  2: over_fermented

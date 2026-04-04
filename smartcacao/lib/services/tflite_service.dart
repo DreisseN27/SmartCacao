@@ -57,6 +57,8 @@ class TFLiteService {
     }
 
     try {
+      print('  [runInference] Starting inference on: $imagePath');
+      
       // Call native code to run inference
       final result = await platform.invokeMethod<Map<dynamic, dynamic>>(
         'runInference',
@@ -64,14 +66,17 @@ class TFLiteService {
       );
       
       if (result?['success'] == false) {
-        throw Exception(result?['error'] ?? 'Unknown error');
+        final error = result?['error'] ?? 'Unknown error';
+        print('  [runInference] ❌ Native error: $error');
+        throw Exception(error);
       }
 
       // Parse detections from result
       final detections = _parseDetections(result);
+      print('  [runInference] ✓ Inference complete: ${detections.length} detections');
       return detections;
     } catch (e) {
-      print('Inference error: $e');
+      print('  [runInference] ❌ Error: $e');
       rethrow;
     }
   }
@@ -79,34 +84,52 @@ class TFLiteService {
   /// Parse detection results from native code
   List<Detection> _parseDetections(Map<dynamic, dynamic>? result) {
     final detections = <Detection>[];
-    const double confidenceThreshold = 0.5; // Filter out detections below 50% confidence
+    const double confidenceThreshold = 0.3; // Lower threshold for live detection
     
     try {
       if (result == null) return detections;
       
       final detectionsList = result['detections'] as List<dynamic>? ?? [];
+      print('  [parseDetections] Total detections from native: ${detectionsList.length}');
       
+      int filtered = 0;
       for (final det in detectionsList) {
         if (det is Map<dynamic, dynamic>) {
+          // DEBUG: Log raw detection map from native
+          print('  [parseDetections] RAW DETECTION: x=${det['x']}, y=${det['y']}, width=${det['width']}, height=${det['height']}, confidence=${det['confidence']}, label=${det['label']}');
+          
           final confidence = (det['confidence'] as num?)?.toDouble() ?? 0.0;
           
           // Only include detections with sufficient confidence
           if (confidence >= confidenceThreshold) {
+            final x = (det['x'] as num?)?.toDouble() ?? 0.0;
+            final y = (det['y'] as num?)?.toDouble() ?? 0.0;
+            final width = (det['width'] as num?)?.toDouble() ?? 0.0;
+            final height = (det['height'] as num?)?.toDouble() ?? 0.0;
+            
+            // DEBUG: Log raw values received from native
+            print('  [PARSE] Detection received from native: x=$x, y=$y, w=$width, h=$height, conf=$confidence, label=${det['label']}');
+            
             detections.add(
               Detection(
                 label: det['label'] as String? ?? 'unknown',
                 confidence: confidence,
-                x: (det['x'] as num?)?.toDouble() ?? 0.0,
-                y: (det['y'] as num?)?.toDouble() ?? 0.0,
-                width: (det['width'] as num?)?.toDouble() ?? 0.0,
-                height: (det['height'] as num?)?.toDouble() ?? 0.0,
+                x: x,
+                y: y,
+                width: width,
+                height: height,
               ),
             );
+          } else {
+            filtered++;
           }
         }
       }
+      
+      print('  [parseDetections] Confidence threshold: $confidenceThreshold');
+      print('  [parseDetections] Passed threshold: ${detections.length}, Filtered out: $filtered');
     } catch (e) {
-      print('Error parsing detections: $e');
+      print('  [parseDetections] ❌ Error parsing: $e');
     }
     
     return detections;
@@ -115,9 +138,12 @@ class TFLiteService {
   /// Get fermentation analysis from detections
   Future<Map<String, dynamic>> analyzeBeans(String imagePath) async {
     try {
+      print('📊 ANALYSIS START - Image: $imagePath');
       final detections = await runInference(imagePath);
+      print('📊 Detections received: ${detections.length}');
 
       if (detections.isEmpty) {
+        print('⚠️  WARNING: No beans detected in the image');
         return {
           'success': false,
           'message': 'No beans detected in the image',
@@ -138,9 +164,16 @@ class TFLiteService {
         fermentationCounts[detection.label] = 
             (fermentationCounts[detection.label] ?? 0) + 1;
         totalConfidence += detection.confidence;
+        print('  ✓ Detection: ${detection.label} @ confidence ${detection.confidence.toStringAsFixed(2)}');
       }
 
       final avgConfidence = totalConfidence / detections.length;
+      print('📊 Statistics:');
+      print('  - Total detections: ${detections.length}');
+      print('  - Under-fermented: ${fermentationCounts['under_fermented']}');
+      print('  - Properly-fermented: ${fermentationCounts['properly_fermented']}');
+      print('  - Over-fermented: ${fermentationCounts['over_fermented']}');
+      print('  - Average confidence: ${avgConfidence.toStringAsFixed(3)}');
 
       // Determine overall fermentation status
       final mostCommonStatus = fermentationCounts.entries
@@ -158,6 +191,7 @@ class TFLiteService {
             'Fermentation has exceeded optimal time. Reduce fermentation duration next time.';
       }
 
+      print('✅ ANALYSIS COMPLETE - Status: $mostCommonStatus');
       return {
         'success': true,
         'message': 'Analysis completed successfully',
@@ -178,6 +212,7 @@ class TFLiteService {
         'detections': detections.map((d) => d.toJson()).toList(),
       };
     } catch (e) {
+      print('❌ ANALYSIS ERROR: $e');
       return {
         'success': false,
         'message': 'Error during analysis: $e',
