@@ -240,12 +240,17 @@ class CacaoModelInference(private val context: Context) {
             
             val totalElements = outputArray.size
             
-            if (totalElements != 14700) {
-                android.util.Log.w("SmartCacao", "PARSE: Unexpected output size! Expected 14700 (1*7*2100) but got $totalElements")
+            // Determine the format: 7 heads (2 classes) or 8 heads (3 classes)
+            val numHeads = if (totalElements == 14700) 7 else if (totalElements == 16800) 8 else -1
+            
+            if (numHeads == -1) {
+                android.util.Log.w("SmartCacao", "PARSE: Unexpected output size! Expected 14700 (7*2100) or 16800 (8*2100), got $totalElements")
             }
             
+            android.util.Log.d("SmartCacao", "PARSE: Output format has $numHeads heads (${numHeads}*2100 = ${2100*numHeads} floats)")
+            
             val numPredictions = 2100
-            val stride = 2100  // Transposed format: [1, 7, 2100]
+            val stride = 2100  // Transposed format: [1, numHeads, 2100]
             
             // DEBUG: Log first few values to understand the data layout
             android.util.Log.d("SmartCacao", "DEBUG: First 20 array values: ${outputArray.take(20).map { String.format("%.4f", it) }.joinToString(", ")}")
@@ -261,18 +266,30 @@ class CacaoModelInference(private val context: Context) {
             
             for (i in 0 until numPredictions) {
                 try {
-                    // For transposed [1, 7, 2100] format:
-                    // Each of the 7 outputs has 2100 values (one for each prediction)
+                    // For transposed [1, numHeads, 2100] format:
+                    // Heads 0-3: x, y, w, h
+                    // Head 4: objectness
+                    // Head 5: class 0 probability (under_fermented)
+                    // Head 6: class 1 probability (properly_fermented)
+                    // Head 7 (if exists): class 2 probability (over_fermented)
+                    
                     val xNorm = outputArray[0 * stride + i]          // x at index [0][i]
                     val yNorm = outputArray[1 * stride + i]          // y at index [1][i]
                     val wNorm = outputArray[2 * stride + i]          // w at index [2][i]
                     val hNorm = outputArray[3 * stride + i]          // h at index [3][i]
                     val objectness = outputArray[4 * stride + i]     // obj at index [4][i]
-                    val classProb0 = outputArray[5 * stride + i]     // class0 at index [5][i]
-                    val classProb1 = outputArray[6 * stride + i]     // class1 at index [6][i]
+                    val classProb0 = outputArray[5 * stride + i]     // class0 at index [5][i] (under_fermented)
+                    val classProb1 = outputArray[6 * stride + i]     // class1 at index [6][i] (properly_fermented)
+                    
+                    // Try to read class 2 if it exists (8-head format)
+                    val classProb2 = if (numHeads >= 8 && outputArray.size > (7 * stride + i)) {
+                        outputArray[7 * stride + i]  // class2 at index [7][i] (over_fermented)
+                    } else {
+                        maxOf(0f, 1.0f - classProb0 - classProb1)  // Implicit: calculated from other 2
+                    }
                     
                     // Check for all zeros
-                    if (xNorm == 0f && yNorm == 0f && wNorm == 0f && hNorm == 0f && objectness == 0f && classProb0 == 0f && classProb1 == 0f) {
+                    if (xNorm == 0f && yNorm == 0f && wNorm == 0f && hNorm == 0f && objectness == 0f && classProb0 == 0f && classProb1 == 0f && classProb2 == 0f) {
                         zeroCount++
                         continue
                     }
@@ -294,10 +311,7 @@ class CacaoModelInference(private val context: Context) {
                         android.util.Log.d("SmartCacao", "PIXEL COORDS [i=$i]: x=${String.format("%.2f", xPixel)} y=${String.format("%.2f", yPixel)} w=${String.format("%.2f", wPixel)} h=${String.format("%.2f", hPixel)}")
                     }
                     
-                    // Determine class 2 probability (implicit)
-                    val classProb2 = maxOf(0f, 1.0f - classProb0 - classProb1)
-                    
-                    // Find best class
+                    // Find best class (classProb2 already calculated above)
                     val classProbs = floatArrayOf(classProb0, classProb1, classProb2)
                     val bestClassIdx = classProbs.indices.maxByOrNull { classProbs[it] } ?: 0
                     val bestClassProb = classProbs[bestClassIdx]
