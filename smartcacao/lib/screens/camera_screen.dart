@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:image/image.dart' as img;
 import '../services/tflite_service.dart';
 import '../models/detection.dart';
+import '../utils/permission_utils.dart';
 import 'result_screen.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -20,17 +21,62 @@ class _CameraScreenState extends State<CameraScreen> {
   final TFLiteService tfliteService = TFLiteService();
   bool isProcessing = false;
   bool isInferenceBusy = false;
-  bool isLiveDetectionMode = true;
+  bool isLiveDetectionMode = true; // ENABLED: Live detection mode
   List<Detection> liveDetections = [];
   int frameCount = 0;
   double fps = 0;
   DateTime lastFpsTime = DateTime.now();
+  bool _captureInProgress = false; // LOCK to prevent multiple simultaneous captures
 
   @override
   void initState() {
     super.initState();
-    initCamera();
+    print('CameraScreen initState - starting permission and model initialization');
+    requestPermissionsAndInitialize();
     loadModel();
+  }
+
+  /// Request necessary permissions and then initialize camera
+  Future<void> requestPermissionsAndInitialize() async {
+    print('Requesting permissions...');
+    try {
+      final hasPermissions = await PermissionUtils.requestAllPermissions();
+      print('Permission request result: $hasPermissions');
+      
+      if (hasPermissions) {
+        print('Permissions granted, initializing camera');
+        initCamera();
+      } else {
+        print('Permissions denied, showing error');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Camera permission is required to use this app. '
+                'Please enable camera access in Settings.',
+              ),
+              backgroundColor: Colors.red.shade800,
+              duration: const Duration(seconds: 5),
+              action: SnackBarAction(
+                label: 'Open Settings',
+                onPressed: () => PermissionUtils.openAppSettings(),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error during permission request: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error requesting permissions: $e'),
+            backgroundColor: Colors.red.shade800,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> loadModel() async {
@@ -79,7 +125,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
       initializeControllerFuture = controller!.initialize();
       
-      // Start live detection after initialization (if in live mode)
+      // Start live detection after initialization
       initializeControllerFuture.then((_) {
         if (mounted && tfliteService.isModelLoaded && isLiveDetectionMode) {
           startLiveDetection();
@@ -105,10 +151,10 @@ class _CameraScreenState extends State<CameraScreen> {
         // Skip frame if inference is still busy (prevent frame queue buildup)
         if (isInferenceBusy) return;
         
-        // Process every 2nd frame for better performance (still ~15 FPS detection)
-        if (frameCount % 2 == 0) {
-          await processFrame(image);
-        }
+        // Process every frame for maximum FPS on powerful devices
+        // The isInferenceBusy flag prevents queue buildup while still maintaining high framerate
+        await processFrame(image);
+        
         frameCount++;
         
         // Update FPS
@@ -297,27 +343,46 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> captureImage() async {
-    if (isProcessing) return;
+    // Prevent multiple simultaneous captures
+    if (isProcessing || _captureInProgress) {
+      print('⚠️  Capture already in progress, ignoring tap');
+      return;
+    }
 
+    _captureInProgress = true; // Lock before any async operation
+    
     try {
       await initializeControllerFuture;
       setState(() => isProcessing = true);
 
+      print('\n═══════════════════════════════════');
+      print('📸 SINGLE CAPTURE START');
+      print('═══════════════════════════════════');
+      print('[1/4] Capturing image...');
       final image = await controller!.takePicture();
+      print('[2/4] ✓ Image captured: ${image.path}');
 
       if (!mounted) return;
 
       // Show loading dialog
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
 
       // Run analysis
+      print('[3/4] Starting inference and analysis...');
       final result = await tfliteService.analyzeBeans(image.path);
+      print('[4/4] ✓ Analysis complete');
+      print('Detections found: ${result['detections']?.length ?? 0}');
+      if (result['success'] != true) {
+        print('⚠️  Analysis failed: ${result['message']}');
+      }
 
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
@@ -331,21 +396,35 @@ class _CameraScreenState extends State<CameraScreen> {
             ),
           ),
         );
+        print('═══════════════════════════════════');
+        print('✅ Navigated to results screen');
+        print('═══════════════════════════════════\n');
       }
     } catch (e) {
+      print('\n❌ ERROR DURING CAPTURE: $e');
+      print('Stack trace: ${StackTrace.current}');
       if (mounted) {
-        Navigator.pop(context, null); // Close loading dialog if open
+        // Try to close dialog if it's open
+        try {
+          Navigator.pop(context);
+        } catch (_) {}
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Capture Error: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
     } finally {
+      _captureInProgress = false; // UNLOCK
       if (mounted) {
         setState(() => isProcessing = false);
       }
+      print('═══════════════════════════════════');
+      print('📸 SINGLE CAPTURE END');
+      print('═══════════════════════════════════\n');
     }
   }
 
@@ -445,7 +524,7 @@ class _CameraScreenState extends State<CameraScreen> {
                               painter: DetectionPainter(liveDetections),
                             ),
                           ),
-                        // Grid overlay
+                        // Grid overlay for composition guide
                         Positioned.fill(
                           child: CustomPaint(
                             painter: GridPainter(),
@@ -597,7 +676,39 @@ class DetectionPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
 
-    for (final detection in detections) {
+    const modelInputSize = 320.0; // Model was trained on 320x320
+
+    // Calculate the scale factor accounting for aspect ratio
+    // Camera preview maintains aspect ratio, so we need to find the visible area
+    final screenAspect = size.width / size.height;
+    final modelAspect = 1.0; // 320x320 is square
+    
+    print('📐 DetectionPainter: size=$size, aspect=${screenAspect.toStringAsFixed(2)}');
+    
+    // Calculate how much of the screen is actually used by the camera preview
+    late double scaleX, scaleY, offsetX, offsetY;
+    
+    if (screenAspect > modelAspect) {
+      // Screen is wider than model (common for portrait phones)
+      // Model will be constrained by height
+      scaleX = size.height; // Both scale by height
+      scaleY = size.height;
+      offsetX = (size.width - scaleX) / 2; // Center horizontally
+      offsetY = 0;
+    } else {
+      // Screen is taller than model (unusual, but handle it)
+      // Model will be constrained by width
+      scaleX = size.width;
+      scaleY = size.width;
+      offsetX = 0;
+      offsetY = (size.height - scaleY) / 2; // Center vertically
+    }
+    
+    print('📐 Scale: scaleX=$scaleX, scaleY=$scaleY, offsetX=$offsetX, offsetY=$offsetY');
+
+    for (var idx = 0; idx < detections.length; idx++) {
+      final detection = detections[idx];
+      
       // Set color based on class
       if (detection.label == 'under_fermented') {
         paint.color = Colors.red;
@@ -607,11 +718,24 @@ class DetectionPainter extends CustomPainter {
         paint.color = Colors.orange;
       }
 
-      // Convert normalized coordinates to screen coordinates
-      final left = detection.x * size.width - (detection.width * size.width / 2);
-      final top = detection.y * size.height - (detection.height * size.height / 2);
-      final right = detection.x * size.width + (detection.width * size.width / 2);
-      final bottom = detection.y * size.height + (detection.height * size.height / 2);
+      // Model coordinates are in pixel space (0-320)
+      // Scale to screen coordinates, accounting for aspect ratio
+      final screenX = offsetX + (detection.x / modelInputSize) * scaleX;
+      final screenY = offsetY + (detection.y / modelInputSize) * scaleY;
+      final screenW = (detection.width / modelInputSize) * scaleX;
+      final screenH = (detection.height / modelInputSize) * scaleY;
+
+      // Calculate bounding box corners (x,y are center coordinates)
+      final left = screenX - screenW / 2;
+      final top = screenY - screenH / 2;
+      final right = screenX + screenW / 2;
+      final bottom = screenY + screenH / 2;
+
+      // DEBUG: Log detailed transformation
+      print('📦 Detection[$idx] RAW: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
+      print('📦 Detection[$idx] TRANSFORM: div_by_320=(${detection.x / modelInputSize},${detection.y / modelInputSize}), scale_by=${scaleX.toStringAsFixed(1)}');
+      print('📦 Detection[$idx] SCREEN: center=(${screenX.toStringAsFixed(1)},${screenY.toStringAsFixed(1)}), dims=(${screenW.toStringAsFixed(1)},${screenH.toStringAsFixed(1)})');
+      print('📦 Detection[$idx] BOX: left=${left.toStringAsFixed(1)}, top=${top.toStringAsFixed(1)}, right=${right.toStringAsFixed(1)}, bottom=${bottom.toStringAsFixed(1)}');
 
       // Draw bounding box
       canvas.drawRect(

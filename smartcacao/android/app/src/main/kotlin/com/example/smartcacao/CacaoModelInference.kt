@@ -3,16 +3,15 @@ package com.example.smartcacao
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
+import ai.onnxruntime.*
 import java.nio.FloatBuffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class CacaoModelInference(private val context: Context) {
-    private val env = OrtEnvironment.getEnvironment()
     private var session: OrtSession? = null
-    private val inputName = "images"
-    private val outputName = "output0"
+    private val INPUT_SIZE = 320
+    private val INPUT_CHANNELS = 3
     
     fun initializeModel(): Boolean {
         return try {
@@ -21,7 +20,7 @@ class CacaoModelInference(private val context: Context) {
                 return true
             }
             
-            android.util.Log.d("SmartCacao", "=== MODEL LOADING START ===")
+            android.util.Log.d("SmartCacao", "=== MODEL LOADING START (ONNX Runtime) ===")
             android.util.Log.d("SmartCacao", "Context: ${context.javaClass.simpleName}")
             android.util.Log.d("SmartCacao", "Package name: ${context.packageName}")
             
@@ -30,7 +29,7 @@ class CacaoModelInference(private val context: Context) {
             val assetsList = context.assets.list("") ?: arrayOf()
             android.util.Log.d("SmartCacao", "Assets root contains: ${assetsList.toList().joinToString(", ")}")
             
-            // Step 2: Check if models folder exists (Flutter puts assets in flutter_assets/)
+            // Step 2: Check if models folder exists
             android.util.Log.d("SmartCacao", "Step 2: Checking models folder...")
             val modelsList = context.assets.list("flutter_assets/assets/models") ?: arrayOf()
             android.util.Log.d("SmartCacao", "Models folder contains: ${modelsList.toList().joinToString(", ")}")
@@ -46,18 +45,21 @@ class CacaoModelInference(private val context: Context) {
                 return false
             }
             
-            // Step 3: Load model file
-            android.util.Log.d("SmartCacao", "Step 3: Loading best.onnx from assets...")
+            // Step 3: Create ONNX Runtime environment and session
+            android.util.Log.d("SmartCacao", "Step 3: Creating ONNX Runtime environment...")
+            val env = OrtEnvironment.getEnvironment()
+            
+            // Step 4: Load ONNX model from assets
+            android.util.Log.d("SmartCacao", "Step 4: Loading best.onnx from assets...")
             val modelBytes = context.assets.open("flutter_assets/assets/models/best.onnx").readBytes()
             android.util.Log.d("SmartCacao", "✓ Model file loaded successfully, size: ${modelBytes.size} bytes (${String.format("%.2f", modelBytes.size / 1024.0 / 1024.0)} MB)")
             
-            // Step 4: Initialize ONNX Runtime
-            android.util.Log.d("SmartCacao", "Step 4: Initializing ONNX Runtime environment...")
-            android.util.Log.d("SmartCacao", "OrtEnvironment: ${env.javaClass.simpleName}")
-            
-            // Step 5: Create session
+            // Step 5: Create session options and session
             android.util.Log.d("SmartCacao", "Step 5: Creating ONNX Runtime session...")
-            session = env.createSession(modelBytes, OrtSession.SessionOptions())
+            val sessionOptions = OrtSession.SessionOptions()
+            sessionOptions.setIntraOpNumThreads(4)
+            session = env.createSession(modelBytes, sessionOptions)
+            
             android.util.Log.i("SmartCacao", "✓✓✓ MODEL LOADED AND INITIALIZED SUCCESSFULLY ✓✓✓")
             android.util.Log.i("SmartCacao", "=== MODEL LOADING COMPLETE ===")
             true
@@ -68,13 +70,10 @@ class CacaoModelInference(private val context: Context) {
             android.util.Log.e("SmartCacao", "Stack trace:")
             e.printStackTrace()
             
-            // Log specific error causes
             if (e is java.io.FileNotFoundException) {
                 android.util.Log.e("SmartCacao", "CAUSE: File not found - model file missing from APK")
             } else if (e is java.io.IOException) {
-                android.util.Log.e("SmartCacao", "CAUSE: IO Error - cannot read file (permissions? corrupted?)")
-            } else if (e.message?.contains("ONNX") == true) {
-                android.util.Log.e("SmartCacao", "CAUSE: ONNX Runtime error - model format issue or missing library")
+                android.util.Log.e("SmartCacao", "CAUSE: IO Error - cannot read file")
             }
             
             android.util.Log.e("SmartCacao", "=== MODEL LOADING FAILED ===")
@@ -90,31 +89,102 @@ class CacaoModelInference(private val context: Context) {
             
             // Load and preprocess image
             val bitmap = BitmapFactory.decodeFile(imagePath)
-            android.util.Log.d("SmartCacao", "Image loaded: ${bitmap?.width}x${bitmap?.height}")
+                ?: return mutableMapOf<String, Any>("error" to "Failed to load image")
             
-            val inputTensor = preprocessImage(bitmap)
-            android.util.Log.d("SmartCacao", "Image preprocessed, running inference...")
+            android.util.Log.d("SmartCacao", "Image loaded: ${bitmap.width}x${bitmap.height}")
             
-            // Run inference
-            val output = session.run(mapOf(inputName to inputTensor))
-            android.util.Log.d("SmartCacao", "Inference complete")
+            // Prepare input
+            val inputArray = preprocessImage(bitmap)
+            val env = OrtEnvironment.getEnvironment()
+            val shape = longArrayOf(1, 3, INPUT_SIZE.toLong(), INPUT_SIZE.toLong())
             
-            // Get output tensor - properly unwrap
-            val outputValue = output[outputName]
-            android.util.Log.d("SmartCacao", "Output value type: ${outputValue?.javaClass?.simpleName}")
+            // Convert to FloatBuffer
+            val buffer = ByteBuffer.allocateDirect(1 * 3 * INPUT_SIZE * INPUT_SIZE * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            for (i in inputArray.indices) {
+                for (c in inputArray[i].indices) {
+                    for (y in inputArray[i][c].indices) {
+                        for (x in inputArray[i][c][y].indices) {
+                            buffer.put(inputArray[i][c][y][x])
+                        }
+                    }
+                }
+            }
+            buffer.rewind()
             
-            // Handle Optional wrapper from newer ONNX Runtime versions
-            val outputTensor = if (outputValue is java.util.Optional<*>) {
-                outputValue.get() as OnnxTensor
-            } else {
-                outputValue as OnnxTensor
+            android.util.Log.d("SmartCacao", "Running inference...")
+            
+            // Create ONNX tensor from FloatBuffer
+            val inputTensor = OnnxTensor.createTensor(env, buffer, shape)
+            
+            val inputs = mapOf("images" to inputTensor)
+            val results = session.run(inputs)
+            
+            android.util.Log.d("SmartCacao", "Inference complete, results type: ${results.javaClass.simpleName}")
+            
+            // Get output and debug the shape - results might be OrtOutputs which is list-like
+            val outputTensor = try {
+                results[0] as OnnxTensor
+            } catch (e: Exception) {
+                android.util.Log.e("SmartCacao", "Failed to get result[0]: ${e.message}")
+                throw e
+            }
+            android.util.Log.d("SmartCacao", "Output tensor type: ${outputTensor.javaClass.simpleName}")
+            
+            // Try to log shape info
+            try {
+                val shapeInfo = outputTensor.info?.shape?.joinToString(",") ?: "unknown"
+                android.util.Log.d("SmartCacao", "Output tensor shape: [$shapeInfo]")
+            } catch (e: Exception) {
+                android.util.Log.d("SmartCacao", "Could not get shape info: ${e.message}")
             }
             
-            android.util.Log.d("SmartCacao", "Output tensor acquired, parsing detections...")
+            val output = when (val value = outputTensor.value) {
+                is FloatArray -> {
+                    android.util.Log.d("SmartCacao", "Output is FloatArray, size: ${value.size}")
+                    // Print first 50 values for debugging
+                    if (value.size <= 100) {
+                        val preview = value.take(minOf(50, value.size)).joinToString(",") { String.format("%.4f", it) }
+                        android.util.Log.d("SmartCacao", "First values: $preview")
+                    } else {
+                        val preview = value.take(50).joinToString(",") { String.format("%.4f", it) }
+                        android.util.Log.d("SmartCacao", "First 50 values: $preview")
+                    }
+                    value
+                }
+                is Array<*> -> {
+                    android.util.Log.d("SmartCacao", "Output is Array, dimensions: ${(value as Array<*>).size}")
+                    // If it's a nested array, flatten it
+                    val flat = mutableListOf<Float>()
+                    fun flatten(arr: Any) {
+                        when (arr) {
+                            is Array<*> -> {
+                                android.util.Log.d("SmartCacao", "  Array size: ${arr.size}")
+                                arr.forEach { flatten(it!!) }
+                            }
+                            is FloatArray -> {
+                                android.util.Log.d("SmartCacao", "  FloatArray size: ${arr.size}")
+                                flat.addAll(arr.toList())
+                            }
+                        }
+                    }
+                    flatten(value)
+                    android.util.Log.d("SmartCacao", "Flattened to ${flat.size} floats")
+                    flat.toFloatArray()
+                }
+                else -> {
+                    android.util.Log.e("SmartCacao", "Unknown output type: ${value?.javaClass?.simpleName}")
+                    throw RuntimeException("Unknown output type: ${value?.javaClass?.simpleName}")
+                }
+            }
             
             // Parse detections
-            val detections = parseDetections(outputTensor)
+            android.util.Log.d("SmartCacao", "OUTPUT CHECK: First 10 values: ${output.take(10).joinToString(",") { String.format("%.2f", it) }}")
+            android.util.Log.d("SmartCacao", "OUTPUT CHECK: Values at 857: ${String.format("%.2f", output[857])}, 2957: ${String.format("%.2f", output[2957])}, 4557: ${String.format("%.2f", output[4557])}, 6157: ${String.format("%.2f", output[6157])}")
+            
+            val detections = parseDetections(output)
             android.util.Log.i("SmartCacao", "✓ Inference successful: ${detections.size} detections")
+            
+            inputTensor.close()
             
             val result: MutableMap<String, Any> = mutableMapOf()
             result["success"] = true
@@ -131,109 +201,149 @@ class CacaoModelInference(private val context: Context) {
         }
     }
     
-    private fun preprocessImage(bitmap: Bitmap): OnnxTensor {
-        val resized = Bitmap.createScaledBitmap(bitmap, 640, 640, true)
+    private fun preprocessImage(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
+        val resized = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
         
-        // Convert to float array normalized to [0, 1]
-        val data = FloatArray(1 * 3 * 640 * 640)
-        
-        for (y in 0 until 640) {
-            for (x in 0 until 640) {
-                val pixel = resized.getPixel(x, y)
-                val r = (pixel shr 16 and 0xFF) / 255.0f
-                val g = (pixel shr 8 and 0xFF) / 255.0f
-                val b = (pixel and 0xFF) / 255.0f
-                
-                // CHW format (channels first)
-                data[y * 640 + x] = r // R channel
-                data[640 * 640 + y * 640 + x] = g // G channel
-                data[2 * 640 * 640 + y * 640 + x] = b // B channel
+        // Create float array for ONNX input [1][3][320][320]
+        val input = Array(1) {
+            Array(3) {
+                Array(INPUT_SIZE) {
+                    FloatArray(INPUT_SIZE)
+                }
             }
         }
         
-        // Create FloatBuffer and tensor with shape
-        val buffer = FloatBuffer.wrap(data)
-        return OnnxTensor.createTensor(env, buffer, longArrayOf(1, 3, 640, 640))
+        // Convert bitmap to float array (normalize RGB values 0-1 or 0-255 depending on model)
+        for (y in 0 until INPUT_SIZE) {
+            for (x in 0 until INPUT_SIZE) {
+                val pixel = resized.getPixel(x, y)
+                val r = ((pixel shr 16) and 0xFF).toFloat()
+                val g = ((pixel shr 8) and 0xFF).toFloat()
+                val b = (pixel and 0xFF).toFloat()
+                
+                // Normalize to 0-1 range
+                input[0][0][y][x] = r / 255.0f
+                input[0][1][y][x] = g / 255.0f
+                input[0][2][y][x] = b / 255.0f
+            }
+        }
+        
+        return input
     }
     
-    private fun parseDetections(outputTensor: OnnxTensor): List<Map<String, Any>> {
+    private fun parseDetections(outputArray: FloatArray): List<Map<String, Any>> {
         val detections = mutableListOf<Map<String, Any>>()
         val classNames = listOf("under_fermented", "properly_fermented", "over_fermented")
         
         try {
-            val output = outputTensor.floatBuffer.array()
-            android.util.Log.d("SmartCacao", "PARSE: Output array size: ${output.size}")
+            android.util.Log.d("SmartCacao", "PARSE: Output array size: ${outputArray.size} floats")
             
-            // YOLOv8 exports as [1, 8400, 8] where:
-            // 8 elements = 4(bbox x,y,w,h) + 1(objectness) + 3(class probs)
+            val totalElements = outputArray.size
+            
+            if (totalElements != 14700) {
+                android.util.Log.w("SmartCacao", "PARSE: Unexpected output size! Expected 14700 (1*7*2100) but got $totalElements")
+            }
+            
+            val numPredictions = 2100
+            val stride = 2100  // Transposed format: [1, 7, 2100]
+            
+            // DEBUG: Log first few values to understand the data layout
+            android.util.Log.d("SmartCacao", "DEBUG: First 20 array values: ${outputArray.take(20).map { String.format("%.4f", it) }.joinToString(", ")}")
+            android.util.Log.d("SmartCacao", "DEBUG: Checking prediction 600:")
+            android.util.Log.d("SmartCacao", "  Method 1 (stride=2100): [0*2100+600]=${String.format("%.4f", outputArray[0 * stride + 600])}, [1*2100+600]=${String.format("%.4f", outputArray[1 * stride + 600])}")
+            android.util.Log.d("SmartCacao", "  Method 2 (stride=7):   [600*7+0]=${String.format("%.4f", outputArray[600 * 7 + 0])}, [600*7+1]=${String.format("%.4f", outputArray[600 * 7 + 1])}")
+            
             val detectionsList = mutableListOf<Pair<Float, Map<String, Any>>>()
+            var highConfidenceCount = 0
+            var mediumConfidenceCount = 0
+            var lowConfidenceCount = 0
+            var zeroCount = 0
             
-            // Assuming format: [1, 8400, 8] = 67200 total values
-            val elementsPerDetection = 8
-            val numDetections = 8400
-            
-            for (i in 0 until numDetections) {
-                val baseIdx = i * elementsPerDetection
-                
-                if (baseIdx + 7 >= output.size) {
-                    break
-                }
-                
-                val x = output[baseIdx]
-                val y = output[baseIdx + 1]
-                val w = output[baseIdx + 2]
-                val h = output[baseIdx + 3]
-                val objectness = output[baseIdx + 4]
-                
-                // Skip low confidence early
-                if (objectness < 0.45f) continue
-                
-                // Get class probabilities and find best
-                val classProb0 = output[baseIdx + 5]
-                val classProb1 = output[baseIdx + 6]
-                val classProb2 = output[baseIdx + 7]
-                
-                val bestClassIdx = when {
-                    classProb0 >= classProb1 && classProb0 >= classProb2 -> 0
-                    classProb1 >= classProb0 && classProb1 >= classProb2 -> 1
-                    else -> 2
-                }
-                
-                val bestClassProb = when (bestClassIdx) {
-                    0 -> classProb0
-                    1 -> classProb1
-                    else -> classProb2
-                }
-                
-                val finalConfidence = objectness * bestClassProb
-                
-                if (finalConfidence > 0.4f) {
-                    detectionsList.add(finalConfidence to mapOf<String, Any>(
-                        "label" to classNames[bestClassIdx],
-                        "confidence" to finalConfidence,
-                        "x" to x,
-                        "y" to y,
-                        "width" to w,
-                        "height" to h
-                    ))
+            for (i in 0 until numPredictions) {
+                try {
+                    // For transposed [1, 7, 2100] format:
+                    // Each of the 7 outputs has 2100 values (one for each prediction)
+                    val xNorm = outputArray[0 * stride + i]          // x at index [0][i]
+                    val yNorm = outputArray[1 * stride + i]          // y at index [1][i]
+                    val wNorm = outputArray[2 * stride + i]          // w at index [2][i]
+                    val hNorm = outputArray[3 * stride + i]          // h at index [3][i]
+                    val objectness = outputArray[4 * stride + i]     // obj at index [4][i]
+                    val classProb0 = outputArray[5 * stride + i]     // class0 at index [5][i]
+                    val classProb1 = outputArray[6 * stride + i]     // class1 at index [6][i]
+                    
+                    // Check for all zeros
+                    if (xNorm == 0f && yNorm == 0f && wNorm == 0f && hNorm == 0f && objectness == 0f && classProb0 == 0f && classProb1 == 0f) {
+                        zeroCount++
+                        continue
+                    }
+                    
+                    // Skip very low objectness first
+                    if (objectness < 0.4f) {
+                        lowConfidenceCount++
+                        continue
+                    }
+                    
+                    // Coordinates are already in pixel space (0-320), no need to scale
+                    val xPixel = xNorm
+                    val yPixel = yNorm
+                    val wPixel = wNorm
+                    val hPixel = hNorm
+                    
+                    // DEBUG: Log coordinates
+                    if (objectness >= 0.1f) {
+                        android.util.Log.d("SmartCacao", "PIXEL COORDS [i=$i]: x=${String.format("%.2f", xPixel)} y=${String.format("%.2f", yPixel)} w=${String.format("%.2f", wPixel)} h=${String.format("%.2f", hPixel)}")
+                    }
+                    
+                    // Determine class 2 probability (implicit)
+                    val classProb2 = maxOf(0f, 1.0f - classProb0 - classProb1)
+                    
+                    // Find best class
+                    val classProbs = floatArrayOf(classProb0, classProb1, classProb2)
+                    val bestClassIdx = classProbs.indices.maxByOrNull { classProbs[it] } ?: 0
+                    val bestClassProb = classProbs[bestClassIdx]
+                    
+                    // Use class probability as confidence (matches Google Colab output)
+                    val finalConfidence = bestClassProb
+                    
+                    // DEBUG: Log ALL detections above objectness threshold
+                    if (objectness >= 0.1f) {
+                        android.util.Log.d("SmartCacao", "DEBUG [i=$i] obj=${String.format("%.3f", objectness)} | probs=[${String.format("%.3f", classProb0)},${String.format("%.3f", classProb1)},${String.format("%.3f", classProb2)}] | best_idx=$bestClassIdx best_prob=${String.format("%.3f", bestClassProb)} final=${String.format("%.3f", finalConfidence)} | class=${classNames.getOrNull(bestClassIdx) ?: "unknown"}")
+                    }
+                    
+                    if (finalConfidence >= 0.6f) {
+                        highConfidenceCount++
+                    } else if (finalConfidence >= 0.4f) {
+                        mediumConfidenceCount++
+                    } else {
+                        lowConfidenceCount++
+                    }
+                    
+                    // Threshold: only keep detections with sufficient confidence
+                    if (finalConfidence > 0.35f) {
+                        detectionsList.add(finalConfidence to mapOf<String, Any>(
+                            "label" to (if (bestClassIdx < classNames.size) classNames[bestClassIdx] else "unknown"),
+                            "confidence" to finalConfidence,
+                            "x" to xPixel,
+                            "y" to yPixel,
+                            "width" to wPixel,
+                            "height" to hPixel
+                        ))
+                    }
+                } catch (e: Exception) {
+                    if (i < 10) {
+                        android.util.Log.e("SmartCacao", "PARSE: Error at prediction $i: ${e.message}")
+                    }
                 }
             }
             
-            // Apply NMS to remove overlapping boxes
+            android.util.Log.d("SmartCacao", "PARSE: Zero predictions: $zeroCount, High(>0.6): $highConfidenceCount, Medium(0.4-0.6): $mediumConfidenceCount, Low(0.1-0.4): $lowConfidenceCount")
             android.util.Log.d("SmartCacao", "PARSE: Before NMS: ${detectionsList.size} detections")
-            val finalDetections = applyNMS(detectionsList, 0.4f) // IOU threshold
+            val finalDetections = applyNMS(detectionsList, 0.5f)
             
             android.util.Log.d("SmartCacao", "PARSE: After NMS: ${finalDetections.size} detections")
-            val counts = mutableMapOf<String, Int>()
-            for (det in finalDetections) {
-                val label = det["label"] as? String ?: "unknown"
-                counts[label] = (counts[label] ?: 0) + 1
-            }
-            android.util.Log.d("SmartCacao", "PARSE: Detection breakdown: $counts")
-            
             return finalDetections
         } catch (e: Exception) {
-            android.util.Log.e("SmartCacao", "PARSE: Error parsing detections: ${e.message}")
+            android.util.Log.e("SmartCacao", "PARSE: Fatal error: ${e.message}")
             e.printStackTrace()
             return detections
         }
@@ -314,5 +424,6 @@ class CacaoModelInference(private val context: Context) {
     
     fun release() {
         session?.close()
+        session = null
     }
 }
