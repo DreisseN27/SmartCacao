@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../auth/auth_service.dart';
 import 'camera_screen.dart';
 import 'history_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,6 +43,18 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('SmartCacao'),
         centerTitle: true,
         elevation: 0,
+        leading: IconButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const ProfileScreen(),
+              ),
+            );
+          },
+          icon: const Icon(Icons.account_circle),
+          tooltip: 'Profile',
+        ),
         actions: [
           IconButton(
             onPressed: _handleLogout,
@@ -53,7 +66,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Header section with image
             Container(
               width: double.infinity,
               height: 250,
@@ -95,30 +107,30 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-
-            // Main content
             Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Description
                   Card(
                     elevation: 4,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'About This App',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          const Text(
+                          SizedBox(height: 12),
+                          Text(
                             'SmartCacao uses advanced machine learning to analyze cacao bean fermentation levels. '
                             'Simply capture an image of your cacao beans and the system will determine their '
                             'fermentation status: Under-fermented, Properly-fermented, or Over-fermented.',
@@ -132,10 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // Features
                   const Text(
                     'Features',
                     style: TextStyle(
@@ -144,30 +153,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
                   _buildFeatureItem(
                     icon: Icons.camera_alt,
                     title: 'Real-time Detection',
                     description: 'Capture and analyze in real-time',
                   ),
                   const SizedBox(height: 12),
-
                   _buildFeatureItem(
                     icon: Icons.psychology,
                     title: 'AI-Powered Analysis',
                     description: 'YOLOv8 with MobileNet+CBAM algorithm',
                   ),
                   const SizedBox(height: 12),
-
                   _buildFeatureItem(
                     icon: Icons.assessment,
                     title: 'Detailed Reports',
                     description: 'Get comprehensive fermentation analysis',
                   ),
-
+                  const SizedBox(height: 24),
+                  _buildModelInfoSection(),
                   const SizedBox(height: 32),
-
-                  // Main action button
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -202,14 +207,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 16),
-
-                  // History button
                   SizedBox(
                     width: double.infinity,
                     height: 56,
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () {
                         Navigator.push(
                           context,
@@ -224,38 +226,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      icon: const Icon(Icons.history),
-                      label: const Text(
-                        'View History',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Settings button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: OutlinedButton(
-                      onPressed: () {
-                        _showSettings(context);
-                      },
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.settings),
+                          Icon(Icons.history),
                           SizedBox(width: 8),
-                          Text('Settings'),
+                          Text(
+                            'View History',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -315,33 +297,82 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showSettings(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Settings'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+  Widget _buildModelInfoSection() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Model Information',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.brown.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.memory,
+                    color: Colors.brown.shade700,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Model Information',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            const Text('Model: YOLOv8n'),
-            const Text('Algorithm: YOLOv8 + MobileNet + CBAM'),
-            const Text('Classes: 3 (Under, Proper, Over Fermented)'),
-            const Text('Input Size: 640x640'),
+            const SizedBox(height: 16),
+            _buildModelInfoRow('Model', 'YOLOv8n'),
+            _buildModelInfoRow('Algorithm', 'YOLOv8 + MobileNet + CBAM'),
+            _buildModelInfoRow(
+              'Classes',
+              '3 (Under, Proper, Over Fermented)',
+            ),
+            _buildModelInfoRow('Input Size', '640x640'),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+      ),
+    );
+  }
+
+  Widget _buildModelInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.brown.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                color: Colors.grey,
+                height: 1.4,
+              ),
+            ),
           ),
         ],
       ),

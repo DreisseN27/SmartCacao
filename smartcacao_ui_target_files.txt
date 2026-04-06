@@ -1,0 +1,1929 @@
+==================== smartcacao/lib/screens/login_screen.dart ====================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../auth/auth_service.dart';
+import 'register_screen.dart';
+import 'email_verification_screen.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await AuthService.login(
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (!mounted) return;
+
+      if (user != null && !user.emailVerified) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please verify your email first.'),
+          ),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const EmailVerificationScreen(),
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'Login failed. Please try again.';
+
+      if (e.code == 'user-not-found' ||
+          e.code == 'wrong-password' ||
+          e.code == 'invalid-credential') {
+        message = 'Invalid email or password.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      } else if (e.code == 'too-many-requests') {
+        message = 'Too many attempts. Please try again later.';
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Something went wrong. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Widget _buildFieldLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(
+        color: Colors.grey,
+        fontSize: 14,
+      ),
+      prefixIcon: Icon(
+        icon,
+        color: Colors.brown,
+      ),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.95),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 18,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: Colors.brown.shade200,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: Colors.brown.shade700,
+          width: 2,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: Colors.red,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: Colors.red,
+          width: 2,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brown700 = Colors.brown.shade700;
+    final brown400 = Colors.brown.shade400;
+
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                height: 260,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [brown700, brown400],
+                  ),
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.grain,
+                      size: 80,
+                      color: Colors.white,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Welcome to SmartCacao',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Sign in to continue cacao analysis',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white70,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Card(
+  elevation: 8,
+  color: Colors.brown.shade900.withOpacity(0.88),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+  ),
+  child: Padding(
+    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+  'Login',
+  style: TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  ),
+),
+const SizedBox(height: 8),
+const Text(
+  'Use your email and password to access SmartCacao.',
+  style: TextStyle(
+    fontSize: 14,
+    color: Colors.white70,
+    height: 1.5,
+  ),
+),
+                          const SizedBox(height: 24),
+
+                          _buildFieldLabel('Email'),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 15,
+                            ),
+                            cursorColor: Colors.brown,
+                            decoration: _inputDecoration(
+                              hint: 'Enter your email',
+                              icon: Icons.email_outlined,
+                            ),
+                            validator: (value) {
+                              final text = value?.trim() ?? '';
+                              if (text.isEmpty) return 'Email is required';
+                              if (!text.contains('@')) {
+                                return 'Enter a valid email';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          _buildFieldLabel('Password'),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 15,
+                            ),
+                            cursorColor: Colors.brown,
+                            decoration: _inputDecoration(
+                              hint: 'Enter your password',
+                              icon: Icons.lock_outline,
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.brown,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if ((value ?? '').isEmpty) {
+                                return 'Password is required';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _login,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: brown700,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Login',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text("Don't have an account?"),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const RegisterScreen(),
+                                    ),
+                                  );
+                                },
+                                child: Text(
+                                  'Register',
+                                  style: TextStyle(color: brown700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+==================== smartcacao/lib/screens/register_screen.dart ====================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../auth/auth_service.dart';
+import '../services/api_service.dart';
+import 'email_verification_screen.dart';
+
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _firstNameController = TextEditingController();
+final _middleInitialController = TextEditingController();
+final _lastNameController = TextEditingController();
+
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
+ @override
+void dispose() {
+  _firstNameController.dispose();
+  _middleInitialController.dispose();
+  _lastNameController.dispose();
+  _emailController.dispose();
+  _passwordController.dispose();
+  _confirmPasswordController.dispose();
+  super.dispose();
+}
+
+  Future<void> _register() async {
+
+    
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+  await AuthService.register(
+    email: _emailController.text.trim(),
+    password: _passwordController.text.trim(),
+  );
+
+  final user = FirebaseAuth.instance.currentUser;
+
+  if (user == null || user.email == null) {
+    throw Exception('Firebase user was not created properly.');
+  }
+
+  await ApiService.syncUser(
+    firebaseUid: user.uid,
+    email: user.email!,
+    firstName: _firstNameController.text.trim(),
+    middleInitial: _middleInitialController.text.trim().isEmpty
+        ? null
+        : _middleInitialController.text.trim().toUpperCase(),
+    lastName: _lastNameController.text.trim(),
+    role: 'farmer',
+  );
+
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Account created. Verification email sent.'),
+    ),
+  );
+
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const EmailVerificationScreen(),
+    ),
+  );
+} on FirebaseAuthException catch (e) {
+      String message = 'Registration failed. Please try again.';
+
+      if (e.code == 'email-already-in-use') {
+        message = 'That email is already registered.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password is too weak.';
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (e) {
+  if (!mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text('Something went wrong: $e'),
+    ),
+  );
+} finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Widget _buildFieldLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.brown.shade800,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(
+        color: Colors.grey,
+        fontSize: 14,
+      ),
+      prefixIcon: Icon(
+        icon,
+        color: Colors.brown,
+      ),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.95),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 18,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: Colors.brown.shade200,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: Colors.brown.shade700,
+          width: 2,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: Colors.red,
+        ),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: Colors.red,
+          width: 2,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final brown700 = Colors.brown.shade700;
+    final brown400 = Colors.brown.shade400;
+
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              Container(
+                width: double.infinity,
+                height: 260,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [brown700, brown400],
+                  ),
+                ),
+                child: const Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.person_add_alt_1,
+                      size: 80,
+                      color: Colors.white,
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Create SmartCacao Account',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 8),
+                    Text(
+                      'Register to use cacao analysis tools',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white70,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Card(
+  elevation: 8,
+  color: Colors.brown.shade900.withOpacity(0.88),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+  ),
+  child: Padding(
+    padding: const EdgeInsets.all(20),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+  'Register',
+  style: TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  ),
+),
+const SizedBox(height: 8),
+const Text(
+  'Fill in your details and verify your email.',
+  style: TextStyle(
+    fontSize: 14,
+    color: Colors.white70,
+    height: 1.5,
+  ),
+),
+const SizedBox(height: 24),
+
+_buildFieldLabel('First Name'),
+TextFormField(
+  controller: _firstNameController,
+  style: const TextStyle(
+    color: Colors.black87,
+    fontSize: 15,
+  ),
+  cursorColor: Colors.brown,
+  decoration: _inputDecoration(
+    hint: 'Enter your first name',
+    icon: Icons.person_outline,
+  ),
+  validator: (value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'First name is required';
+    return null;
+  },
+),
+const SizedBox(height: 16),
+
+_buildFieldLabel('Middle Initial'),
+TextFormField(
+  controller: _middleInitialController,
+  textCapitalization: TextCapitalization.characters,
+  maxLength: 1,
+  style: const TextStyle(
+    color: Colors.black87,
+    fontSize: 15,
+  ),
+  cursorColor: Colors.brown,
+  decoration: _inputDecoration(
+    hint: 'Enter your middle initial',
+    icon: Icons.edit_outlined,
+  ).copyWith(
+    counterText: '',
+  ),
+  validator: (value) {
+    final text = value?.trim() ?? '';
+    if (text.isNotEmpty && text.length > 1) {
+      return 'Only 1 character allowed';
+    }
+    return null;
+  },
+),
+const SizedBox(height: 16),
+
+_buildFieldLabel('Last Name'),
+TextFormField(
+  controller: _lastNameController,
+  style: const TextStyle(
+    color: Colors.black87,
+    fontSize: 15,
+  ),
+  cursorColor: Colors.brown,
+  decoration: _inputDecoration(
+    hint: 'Enter your last name',
+    icon: Icons.badge_outlined,
+  ),
+  validator: (value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return 'Last name is required';
+    return null;
+  },
+),
+const SizedBox(height: 16),
+
+_buildFieldLabel('Email'),
+TextFormField(
+  controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 15,
+                            ),
+                            cursorColor: Colors.brown,
+                            decoration: _inputDecoration(
+                              hint: 'Enter your email',
+                              icon: Icons.email_outlined,
+                            ),
+                            validator: (value) {
+                              final text = value?.trim() ?? '';
+                              if (text.isEmpty) return 'Email is required';
+                              if (!text.contains('@')) {
+                                return 'Enter a valid email';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          _buildFieldLabel('Password'),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 15,
+                            ),
+                            cursorColor: Colors.brown,
+                            decoration: _inputDecoration(
+                              hint: 'Create a password',
+                              icon: Icons.lock_outline,
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscurePassword = !_obscurePassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.brown,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if ((value ?? '').isEmpty) {
+                                return 'Password is required';
+                              }
+                              if ((value ?? '').length < 6) {
+                                return 'Password must be at least 6 characters';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
+                          _buildFieldLabel('Confirm Password'),
+                          TextFormField(
+                            controller: _confirmPasswordController,
+                            obscureText: _obscureConfirmPassword,
+                            style: const TextStyle(
+                              color: Colors.black87,
+                              fontSize: 15,
+                            ),
+                            cursorColor: Colors.brown,
+                            decoration: _inputDecoration(
+                              hint: 'Re-enter your password',
+                              icon: Icons.lock_reset,
+                              suffixIcon: IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    _obscureConfirmPassword =
+                                        !_obscureConfirmPassword;
+                                  });
+                                },
+                                icon: Icon(
+                                  _obscureConfirmPassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.brown,
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if ((value ?? '').isEmpty) {
+                                return 'Please confirm your password';
+                              }
+                              if (value != _passwordController.text) {
+                                return 'Passwords do not match';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 24),
+
+                          SizedBox(
+                            width: double.infinity,
+                            height: 56,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _register,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: brown700,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isLoading
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Register',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          Center(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: Text(
+                                'Back to Login',
+                                style: TextStyle(color: brown700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+==================== smartcacao/lib/screens/home_screen.dart ====================
+import 'package:flutter/material.dart';
+import '../auth/auth_service.dart';
+import 'camera_screen.dart';
+import 'history_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  Future<void> _handleLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await AuthService.logout();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('SmartCacao'),
+        centerTitle: true,
+        elevation: 0,
+        actions: [
+          IconButton(
+            onPressed: _handleLogout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header section with image
+            Container(
+              width: double.infinity,
+              height: 250,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.brown.shade700,
+                    Colors.brown.shade400,
+                  ],
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.grain,
+                    size: 80,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Cacao Bean Fermentation',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Detection System',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Main content
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Description
+                  Card(
+                    elevation: 4,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'About This App',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'SmartCacao uses advanced machine learning to analyze cacao bean fermentation levels. '
+                            'Simply capture an image of your cacao beans and the system will determine their '
+                            'fermentation status: Under-fermented, Properly-fermented, or Over-fermented.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              height: 1.6,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Features
+                  const Text(
+                    'Features',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  _buildFeatureItem(
+                    icon: Icons.camera_alt,
+                    title: 'Real-time Detection',
+                    description: 'Capture and analyze in real-time',
+                  ),
+                  const SizedBox(height: 12),
+
+                  _buildFeatureItem(
+                    icon: Icons.psychology,
+                    title: 'AI-Powered Analysis',
+                    description: 'YOLOv8 with MobileNet+CBAM algorithm',
+                  ),
+                  const SizedBox(height: 12),
+
+                  _buildFeatureItem(
+                    icon: Icons.assessment,
+                    title: 'Detailed Reports',
+                    description: 'Get comprehensive fermentation analysis',
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // Main action button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CameraScreen(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.brown.shade700,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.camera),
+                          SizedBox(width: 8),
+                          Text(
+                            'Scan Cacao Beans',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // History button
+SizedBox(
+  width: double.infinity,
+  height: 56,
+  child: ElevatedButton(
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const HistoryScreen(),
+        ),
+      );
+    },
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Colors.brown.shade600,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+    ),
+    child: const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.history),
+        SizedBox(width: 8),
+        Text(
+          'View History',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  ),
+),
+
+                  const SizedBox(height: 16),
+
+                  // Settings button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        _showSettings(context);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.settings),
+                          SizedBox(width: 8),
+                          Text('Settings'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureItem({
+    required IconData icon,
+    required String title,
+    required String description,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.brown.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            color: Colors.brown.shade700,
+            size: 32,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Settings'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Model Information',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Model: YOLOv8n'),
+            const Text('Algorithm: YOLOv8 + MobileNet + CBAM'),
+            const Text('Classes: 3 (Under, Proper, Over Fermented)'),
+            const Text('Input Size: 640x640'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+==================== smartcacao/lib/screens/result_screen.dart ====================
+import 'package:flutter/material.dart';
+import '../services/storage_service.dart';
+import '../models/detection.dart';
+
+class ResultScreen extends StatefulWidget {
+  final Map<String, dynamic> result;
+  final String imagePath;
+
+  const ResultScreen({
+    super.key,
+    required this.result,
+    required this.imagePath,
+  });
+
+  @override
+  State<ResultScreen> createState() => _ResultScreenState();
+}
+
+class _ResultScreenState extends State<ResultScreen> {
+  late StorageService storageService;
+
+  @override
+  void initState() {
+    super.initState();
+    storageService = StorageService();
+    
+    // Save detection to history
+    _saveDetection();
+  }
+
+  Future<void> _saveDetection() async {
+    try {
+      final success = widget.result['success'] ?? false;
+      if (!success) return;
+
+      final fermentationStatus = widget.result['fermentationStatus'] ?? 'unknown';
+      final statistics = widget.result['statistics'] as Map<String, dynamic>? ?? {};
+      final confidence = widget.result['confidence'] as Map<String, dynamic>? ?? {};
+      final recommendation = widget.result['recommendation'] ?? '';
+      final detections = widget.result['detections'] as List<dynamic>? ?? [];
+
+      // Convert dynamic detections to Detection objects
+      List<Detection> detectionList = [];
+      try {
+        for (final det in detections) {
+          if (det is Detection) {
+            detectionList.add(det);
+          }
+        }
+      } catch (e) {
+        print('Error converting detections: $e');
+      }
+
+      // Calculate average confidence safely
+      double averageConfidence = 0.0;
+      try {
+        final avgValue = confidence['average'];
+        if (avgValue != null) {
+          averageConfidence = (avgValue as num).toDouble();
+        }
+      } catch (e) {
+        print('Error extracting confidence: $e');
+      }
+
+      // Save to storage with error handling
+      try {
+        await storageService.saveDetection(
+          originalImagePath: widget.imagePath,
+          fermentationStatus: fermentationStatus,
+          underFermentedCount: statistics['underFermented'] ?? 0,
+          properlyFermentedCount: statistics['properlyFermented'] ?? 0,
+          overFermentedCount: statistics['overFermented'] ?? 0,
+          averageConfidence: averageConfidence,
+          detections: detectionList,
+          recommendation: recommendation,
+        );
+
+        print('Detection saved to history successfully');
+      } catch (storageError) {
+        print('Storage error: $storageError');
+      }
+    } catch (e) {
+      print('Error in detection save process: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final success = widget.result['success'] ?? false;
+    final fermentationStatus = widget.result['fermentationStatus'] ?? 'unknown';
+    final statistics = widget.result['statistics'] as Map<String, dynamic>? ?? {};
+    final confidence = widget.result['confidence'] as Map<String, dynamic>? ?? {};
+    final recommendation = widget.result['recommendation'] ?? '';
+    final detections = widget.result['detections'] as List<dynamic>? ?? [];
+
+    Color statusColor = Colors.grey;
+    IconData statusIcon = Icons.help_outline;
+
+    if (fermentationStatus == 'under_fermented') {
+      statusColor = Colors.red;
+      statusIcon = Icons.schedule;
+    } else if (fermentationStatus == 'properly_fermented') {
+      statusColor = Colors.green;
+      statusIcon = Icons.verified;
+    } else if (fermentationStatus == 'over_fermented') {
+      statusColor = Colors.amber;
+      statusIcon = Icons.warning;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Analysis Result'),
+        elevation: 0,
+      ),
+      body: SingleChildScrollView(
+        child: success
+            ? _buildSuccessView(
+                context,
+                fermentationStatus,
+                statusColor,
+                statusIcon,
+                statistics,
+                confidence,
+                recommendation,
+                detections,
+              )
+            : _buildFailureView(context, widget.result['message'] ?? 'Unknown error'),
+      ),
+    );
+  }
+
+  Widget _buildSuccessView(
+    BuildContext context,
+    String fermentationStatus,
+    Color statusColor,
+    IconData statusIcon,
+    Map<String, dynamic> statistics,
+    Map<String, dynamic> confidence,
+    String recommendation,
+    List<dynamic> detections,
+  ) {
+    return Column(
+      children: [
+        // Status header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: statusColor.withAlpha((0.1 * 255).toInt()),
+            border: Border(
+              bottom: BorderSide(color: statusColor, width: 3),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(statusIcon, size: 64, color: statusColor),
+              const SizedBox(height: 16),
+              Text(
+                _getStatusTitle(fermentationStatus),
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _getStatusDescription(fermentationStatus),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Statistics section
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Analysis Statistics',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Beans detected
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.grain,
+                          color: Colors.blue,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Total Beans Detected',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${statistics['totalBeansDetected'] ?? 0}',
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Fermentation breakdown
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      title: 'Under-Fermented',
+                      count: statistics['underFermented'] ?? 0,
+                      color: Colors.red,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      title: 'Properly-Fermented',
+                      count: statistics['properlyFermented'] ?? 0,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      title: 'Over-Fermented',
+                      count: statistics['overFermented'] ?? 0,
+                      color: Colors.amber,
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+
+              // Confidence scores
+              const Text(
+                'Confidence Scores',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      _buildConfidenceRow(
+                        'Average Confidence',
+                        '${((confidence['average'] ?? 0) * 100).toStringAsFixed(1)}%',
+                      ),
+                      const Divider(height: 24),
+                      _buildConfidenceRow(
+                        'Highest Confidence',
+                        '${((confidence['highest'] ?? 0) * 100).toStringAsFixed(1)}%',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Recommendation
+              const Text(
+                'Recommendation',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              Card(
+                color: statusColor.withAlpha((0.1 * 255).toInt()),
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: statusColor,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          recommendation,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.6,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Action buttons
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).popUntil(
+                    (route) => route.isFirst,
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.brown.shade700,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.home),
+                      SizedBox(width: 8),
+                      Text(
+                        'Back to Home',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.camera_alt),
+                      SizedBox(width: 8),
+                      Text(
+                        'Scan Again',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required int count,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withAlpha((0.1 * 255).toInt()),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(Icons.grain, color: color, size: 24),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$count',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConfidenceRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 14),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.brown,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFailureView(BuildContext context, String message) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: 80,
+            color: Colors.red.shade400,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Analysis Failed',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.brown.shade700,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.camera_alt),
+                  SizedBox(width: 8),
+                  Text(
+                    'Try Again',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getStatusTitle(String status) {
+    switch (status) {
+      case 'under_fermented':
+        return 'Under-Fermented';
+      case 'properly_fermented':
+        return 'Properly Fermented';
+      case 'over_fermented':
+        return 'Over-Fermented';
+      default:
+        return 'Unknown Status';
+    }
+  }
+
+  String _getStatusDescription(String status) {
+    switch (status) {
+      case 'under_fermented':
+        return 'Beans need more fermentation time to develop proper flavor';
+      case 'properly_fermented':
+        return 'Beans have reached optimal fermentation. Ready for processing!';
+      case 'over_fermented':
+        return 'Fermentation has exceeded optimal time. Reduce next cycle.';
+      default:
+        return 'Unable to determine fermentation status';
+    }
+  }
+}
+
+
+==================== smartcacao/lib/main.dart ====================
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+import 'screens/home_screen.dart';
+import 'screens/auth_gate.dart';
+import 'firebase_options.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SmartCacao',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.brown,
+          brightness: Brightness.light,
+        ),
+        useMaterial3: true,
+        fontFamily: 'Roboto',
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.brown,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      home: const AuthGate(),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+
+==================== smartcacao/lib/screens/auth_gate.dart ====================
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../auth/auth_service.dart';
+import 'home_screen.dart';
+import 'login_screen.dart';
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: AuthService.authStateChanges,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            body: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.brown.shade700,
+                    Colors.brown.shade400,
+                  ],
+                ),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          );
+        }
+
+        final user = snapshot.data;
+
+        if (user == null) {
+          return const LoginScreen();
+        }
+
+        if (!user.emailVerified) {
+          return const LoginScreen();
+        }
+
+        return const HomeScreen();
+      },
+    );
+  }
+}
+
+
+==================== smartcacao/lib/auth/auth_service.dart ====================
+import 'package:firebase_auth/firebase_auth.dart';
+
+class AuthService {
+  AuthService._();
+
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  static Stream<User?> get authStateChanges => _auth.authStateChanges();
+
+  static User? get currentUser => _auth.currentUser;
+
+  static Future<UserCredential> register({
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _auth.createUserWithEmailAndPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+
+    if (credential.user != null && !credential.user!.emailVerified) {
+      await credential.user!.sendEmailVerification();
+    }
+
+    return credential;
+  }
+
+  static Future<UserCredential> login({
+    required String email,
+    required String password,
+  }) async {
+    return _auth.signInWithEmailAndPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
+  }
+
+  static Future<void> logout() async {
+    await _auth.signOut();
+  }
+
+  static Future<void> sendVerificationEmail() async {
+    final user = _auth.currentUser;
+    if (user != null && !user.emailVerified) {
+      await user.sendEmailVerification();
+    }
+  }
+
+  static Future<void> reloadUser() async {
+    await _auth.currentUser?.reload();
+  }
+}
+
+

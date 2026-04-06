@@ -1,0 +1,91 @@
+==================== backend/app/Http/Controllers/AuthController.php ====================
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\User;
+
+class AuthController extends Controller
+{
+    public function sync(Request $request)
+    {
+        $request->validate([
+            'firebase_uid' => 'required|string',
+            'email' => 'required|email',
+            'first_name' => 'required|string',
+            'middle_initial' => 'nullable|string',
+            'last_name' => 'required|string',
+            'role' => 'nullable|string',
+        ]);
+
+        $user = User::updateOrCreate(
+            ['firebase_uid' => $request->firebase_uid],
+            [
+                'email' => $request->email,
+                'first_name' => $request->first_name,
+                'middle_initial' => $request->middle_initial,
+                'last_name' => $request->last_name,
+                'role' => $request->role ?? 'farmer',
+            ]
+        );
+
+        return response()->json([
+            'message' => 'User synced successfully',
+            'user' => $user
+        ]);
+    }
+}
+
+
+==================== backend/routes/api.php ====================
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
+
+Route::post('/auth/sync', [AuthController::class, 'sync']);
+
+
+==================== backend/app/Models/User.php ====================
+<?php
+
+namespace App\Models;
+
+// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
+
+#[Fillable([
+    'firebase_uid',
+    'email',
+    'first_name',
+    'middle_initial',
+    'last_name',
+    'role'
+])]
+#[Hidden(['password', 'remember_token'])]
+class User extends Authenticatable
+{
+    /** @use HasFactory<UserFactory> */
+    use HasFactory, Notifiable;
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+}
+
+

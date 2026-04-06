@@ -95,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
         style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: Colors.brown.shade800,
+          color: Colors.white,
         ),
       ),
     );
@@ -118,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.brown.shade50,
+      fillColor: Colors.white.withOpacity(0.95),
       contentPadding: const EdgeInsets.symmetric(
         horizontal: 16,
         vertical: 18,
@@ -205,30 +205,35 @@ class _LoginScreenState extends State<LoginScreen> {
               Padding(
                 padding: const EdgeInsets.all(24),
                 child: Card(
-                  elevation: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
+  elevation: 8,
+  color: Colors.brown.shade900.withOpacity(0.88),
+  shape: RoundedRectangleBorder(
+    borderRadius: BorderRadius.circular(20),
+  ),
+  child: Padding(
+    padding: const EdgeInsets.all(20),
                     child: Form(
                       key: _formKey,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Login',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Use your email and password to access SmartCacao.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                              height: 1.5,
-                            ),
-                          ),
+  'Login',
+  style: TextStyle(
+    fontSize: 22,
+    fontWeight: FontWeight.bold,
+    color: Colors.white,
+  ),
+),
+const SizedBox(height: 8),
+const Text(
+  'Use your email and password to access SmartCacao.',
+  style: TextStyle(
+    fontSize: 14,
+    color: Colors.white70,
+    height: 1.5,
+  ),
+),
                           const SizedBox(height: 24),
 
                           _buildFieldLabel('Email'),
@@ -323,25 +328,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 16),
 
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text("Don't have an account?"),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const RegisterScreen(),
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  'Register',
-                                  style: TextStyle(color: brown700),
-                                ),
-                              ),
-                            ],
-                          ),
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    const Text(
+      "Don't have an account?",
+      style: TextStyle(
+        color: Colors.white70,
+        fontSize: 14,
+      ),
+    ),
+    TextButton(
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const RegisterScreen(),
+          ),
+        );
+      },
+      child: const Text(
+        'Register',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
+  ],
+),
                         ],
                       ),
                     ),
