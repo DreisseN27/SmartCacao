@@ -6,6 +6,16 @@ class TFLiteService {
   static const platform = MethodChannel('com.example.smartcacao/model');
   bool _isModelLoaded = false;
   String _lastError = '';
+  
+  // Store actual image dimensions from native code
+  int _lastImageWidth = 0;
+  int _lastImageHeight = 0;
+  
+  /// Get last image width from native inference
+  int get lastImageWidth => _lastImageWidth;
+  
+  /// Get last image height from native inference
+  int get lastImageHeight => _lastImageHeight;
 
   /// Get the last error that occurred
   String get lastError => _lastError;
@@ -71,6 +81,14 @@ class TFLiteService {
         throw Exception(error);
       }
 
+      // Extract actual image dimensions from native code  
+      _lastImageWidth = (result?['imageWidth'] as num?)?.toInt() ?? 0;
+      _lastImageHeight = (result?['imageHeight'] as num?)?.toInt() ?? 0;
+      
+      if (_lastImageWidth > 0 && _lastImageHeight > 0) {
+        print('  [runInference] 📐 Image dimensions from native: ${_lastImageWidth}x${_lastImageHeight}');
+      }
+
       // Parse detections from result
       final detections = _parseDetections(result);
       print('  [runInference] ✓ Inference complete: ${detections.length} detections');
@@ -84,7 +102,7 @@ class TFLiteService {
   /// Parse detection results from native code
   List<Detection> _parseDetections(Map<dynamic, dynamic>? result) {
     final detections = <Detection>[];
-    const double confidenceThreshold = 0.3; // Lower threshold for live detection
+    const double confidenceThreshold = 0.008; // Balanced threshold to catch beans but filter noise
     
     try {
       if (result == null) return detections;
@@ -93,6 +111,7 @@ class TFLiteService {
       print('  [parseDetections] Total detections from native: ${detectionsList.length}');
       
       int filtered = 0;
+      int lowConfidence = 0;
       for (final det in detectionsList) {
         if (det is Map<dynamic, dynamic>) {
           // DEBUG: Log raw detection map from native
@@ -121,13 +140,14 @@ class TFLiteService {
               ),
             );
           } else {
-            filtered++;
+            lowConfidence++;
+            print('  [parseDetections] FILTERED: confidence=$confidence < threshold=$confidenceThreshold');
           }
         }
       }
       
       print('  [parseDetections] Confidence threshold: $confidenceThreshold');
-      print('  [parseDetections] Passed threshold: ${detections.length}, Filtered out: $filtered');
+      print('  [parseDetections] Passed threshold: ${detections.length}, Low confidence (${confidenceThreshold-0.05}-${confidenceThreshold}): $lowConfidence, Filtered out: $filtered');
     } catch (e) {
       print('  [parseDetections] ❌ Error parsing: $e');
     }

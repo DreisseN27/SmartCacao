@@ -521,7 +521,7 @@ class _CameraScreenState extends State<CameraScreen> {
                         if (isLiveDetectionMode)
                           Positioned.fill(
                             child: CustomPaint(
-                              painter: DetectionPainter(liveDetections),
+                              painter: DetectionPainter(liveDetections, tfliteService: tfliteService),
                             ),
                           ),
                         // Grid overlay for composition guide
@@ -663,8 +663,9 @@ class _CameraScreenState extends State<CameraScreen> {
 
 class DetectionPainter extends CustomPainter {
   final List<Detection> detections;
+  final TFLiteService? tfliteService;
 
-  DetectionPainter(this.detections);
+  DetectionPainter(this.detections, {this.tfliteService});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -718,12 +719,48 @@ class DetectionPainter extends CustomPainter {
         paint.color = Colors.orange;
       }
 
-      // Model coordinates are in pixel space (0-320)
-      // Scale to screen coordinates, accounting for aspect ratio
-      final screenX = offsetX + (detection.x / modelInputSize) * scaleX;
-      final screenY = offsetY + (detection.y / modelInputSize) * scaleY;
-      final screenW = (detection.width / modelInputSize) * scaleX;
-      final screenH = (detection.height / modelInputSize) * scaleY;
+      // Model coordinates are in 320x320 letterboxed space.
+      // Get actual camera dimensions from native code (this is the FIX!)
+      double cameraWidth = 1280.0;
+      double cameraHeight = 720.0;
+      
+      final actualWidth = tfliteService?.lastImageWidth;
+      final actualHeight = tfliteService?.lastImageHeight;
+      
+      if (actualWidth != null && actualHeight != null && actualWidth > 0 && actualHeight > 0) {
+        cameraWidth = actualWidth.toDouble();
+        cameraHeight = actualHeight.toDouble();
+        print('📐 CRITICAL FIX: Using actual camera dimensions: ${cameraWidth.toInt()}x${cameraHeight.toInt()}');
+      } else {
+        print('⚠️  WARNING: Could not get actual camera dimensions, using defaults: ${cameraWidth.toInt()}x${cameraHeight.toInt()}');
+      }
+      
+      const modelInputSize = 320.0;
+      final scale = 320.0 / cameraWidth; // Calculate the actual scale used  
+      final scaledWidth = cameraWidth * scale;
+      final scaledHeight = cameraHeight * scale;
+      final paddingLeft = (modelInputSize - scaledWidth) / 2;
+      final paddingTop = (modelInputSize - scaledHeight) / 2;
+      
+      print('📏 Transform: scale=$scale, scaledSize=${scaledWidth.toInt()}x${scaledHeight.toInt()}, padding=($paddingLeft, $paddingTop)');
+      
+      // Reverse letterbox: model space (0-320) → camera space
+      final cameraX = (detection.x - paddingLeft) / scaledWidth * cameraWidth;
+      final cameraY = (detection.y - paddingTop) / scaledHeight * cameraHeight;
+      final cameraW = (detection.width / modelInputSize) * cameraWidth;
+      final cameraH = (detection.height / modelInputSize) * cameraHeight;
+      
+      // Map camera coordinates to screen coordinates
+      // The preview is displayed as a square (384x384) within the canvas
+      // The canvas and camera both have 16:9 aspect ratio
+      // So the preview fills the entire canvas (384x598.2)
+      // NO PADDING NEEDED - just scale camera space directly to canvas space
+      
+      // Scale camera → canvas (maintaining aspect ratio perfectly)
+      final screenX = (cameraX / cameraWidth) * size.width;
+      final screenY = (cameraY / cameraHeight) * size.height;
+      final screenW = (cameraW / cameraWidth) * size.width;
+      final screenH = (cameraH / cameraHeight) * size.height;
 
       // Calculate bounding box corners (x,y are center coordinates)
       final left = screenX - screenW / 2;
@@ -732,15 +769,38 @@ class DetectionPainter extends CustomPainter {
       final bottom = screenY + screenH / 2;
 
       // DEBUG: Log detailed transformation
-      print('📦 Detection[$idx] RAW: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
-      print('📦 Detection[$idx] TRANSFORM: div_by_320=(${detection.x / modelInputSize},${detection.y / modelInputSize}), scale_by=${scaleX.toStringAsFixed(1)}');
-      print('📦 Detection[$idx] SCREEN: center=(${screenX.toStringAsFixed(1)},${screenY.toStringAsFixed(1)}), dims=(${screenW.toStringAsFixed(1)},${screenH.toStringAsFixed(1)})');
-      print('📦 Detection[$idx] BOX: left=${left.toStringAsFixed(1)}, top=${top.toStringAsFixed(1)}, right=${right.toStringAsFixed(1)}, bottom=${bottom.toStringAsFixed(1)}');
+      print('📦 Detection[$idx] RAW model: x=${detection.x}, y=${detection.y}, w=${detection.width}, h=${detection.height}');
+      print('📦 Detection[$idx] CAMERA: x=${cameraX.toStringAsFixed(1)}, y=${cameraY.toStringAsFixed(1)}, w=${cameraW.toStringAsFixed(1)}, h=${cameraH.toStringAsFixed(1)}');
+      print('📦 Detection[$idx] SCREEN: center=(${screenX.toStringAsFixed(1)},${screenY.toStringAsFixed(1)}), box=(${left.toStringAsFixed(1)}, ${top.toStringAsFixed(1)}, ${right.toStringAsFixed(1)}, ${bottom.toStringAsFixed(1)})');
+      
+      // DEBUG: Verify padding calculation
+      final paddingCheckBottom = modelInputSize - paddingTop - scaledHeight;
+      print('📊 Padding: top=$paddingTop, bottom=$paddingCheckBottom, image_height=$scaledHeight, scaled_w=$scaledWidth');
+      
+      // DEBUG: Verify if detection is in valid image area
+      final isInValidArea = detection.y >= paddingTop && detection.y < (paddingTop + scaledHeight);
+      print('📍 Detection[$idx] in valid area: $isInValidArea (y=${detection.y}, range=$paddingTop-${paddingTop + scaledHeight})');
 
       // Draw bounding box
       canvas.drawRect(
         Rect.fromLTRB(left, top, right, bottom),
         paint,
+      );
+      
+      // Draw crosshair at detection center for visual verification
+      final crosshairSize = 10.0;
+      final crosshairPaint = Paint()
+        ..color = Colors.cyan
+        ..strokeWidth = 1.5;
+      canvas.drawLine(
+        Offset(screenX - crosshairSize, screenY),
+        Offset(screenX + crosshairSize, screenY),
+        crosshairPaint,
+      );
+      canvas.drawLine(
+        Offset(screenX, screenY - crosshairSize),
+        Offset(screenX, screenY + crosshairSize),
+        crosshairPaint,
       );
 
       // Draw label text

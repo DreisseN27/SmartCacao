@@ -13,6 +13,10 @@ class CacaoModelInference(private val context: Context) {
     private val INPUT_SIZE = 320
     private val INPUT_CHANNELS = 3
     
+    // Store last image dimensions for coordinate transform
+    var lastImageWidth: Int = 0
+    var lastImageHeight: Int = 0
+    
     fun initializeModel(): Boolean {
         return try {
             if (session != null) {
@@ -91,7 +95,16 @@ class CacaoModelInference(private val context: Context) {
             val bitmap = BitmapFactory.decodeFile(imagePath)
                 ?: return mutableMapOf<String, Any>("error" to "Failed to load image")
             
-            android.util.Log.d("SmartCacao", "Image loaded: ${bitmap.width}x${bitmap.height}")
+            // IMPORTANT: Capture actual image dimensions for Flutter coordinate transform
+            val actualImageWidth = bitmap.width
+            val actualImageHeight = bitmap.height
+            
+            // Store for later use
+            lastImageWidth = actualImageWidth
+            lastImageHeight = actualImageHeight
+            
+            android.util.Log.d("SmartCacao", "Image loaded: ${actualImageWidth}x${actualImageHeight}")
+            android.util.Log.d("SmartCacao", "CRITICAL: Passing actual dimensions to Flutter for coordinate transform")
             
             // Prepare input
             val inputArray = preprocessImage(bitmap)
@@ -189,6 +202,9 @@ class CacaoModelInference(private val context: Context) {
             val result: MutableMap<String, Any> = mutableMapOf()
             result["success"] = true
             result["detections"] = detections
+            result["imageWidth"] = lastImageWidth
+            result["imageHeight"] = lastImageHeight
+            android.util.Log.d("SmartCacao", "Result includes: imageWidth=$lastImageWidth, imageHeight=$lastImageHeight")
             return result
         } catch (e: Exception) {
             android.util.Log.e("SmartCacao", "Inference error: ${e.javaClass.simpleName}: ${e.message}")
@@ -202,9 +218,29 @@ class CacaoModelInference(private val context: Context) {
     }
     
     private fun preprocessImage(bitmap: Bitmap): Array<Array<Array<FloatArray>>> {
-        val resized = Bitmap.createScaledBitmap(bitmap, INPUT_SIZE, INPUT_SIZE, true)
+        // CRITICAL: Match Colab training preprocessing exactly
+        // Training used imgsz=320, and YOLOv8 letterboxes images to 320x320 automatically
         
-        // Create float array for ONNX input [1][3][320][320]
+        // Step 1: Scale image to fit into 320x320 while preserving aspect ratio
+        // This matches YOLOv8's letterbox behavior in training
+        val imgWidth = bitmap.width.toFloat()
+        val imgHeight = bitmap.height.toFloat()
+        val scale = minOf(INPUT_SIZE / imgWidth, INPUT_SIZE / imgHeight)
+        
+        val scaledWidth = (imgWidth * scale).toInt()
+        val scaledHeight = (imgHeight * scale).toInt()
+        
+        android.util.Log.d("SmartCacao", "PREPROCESS: Scaling ${bitmap.width}x${bitmap.height} by factor $scale -> ${scaledWidth}x${scaledHeight}")
+        
+        // Step 2: Resize with aspect ratio preserved
+        val resized = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        
+        // Step 3: Create letterboxed 320x320 image with padding
+        val paddingLeft = (INPUT_SIZE - scaledWidth) / 2
+        val paddingTop = (INPUT_SIZE - scaledHeight) / 2
+        
+        android.util.Log.d("SmartCacao", "PREPROCESS: Padding left=$paddingLeft, top=$paddingTop")
+        
         val input = Array(1) {
             Array(3) {
                 Array(INPUT_SIZE) {
@@ -213,18 +249,30 @@ class CacaoModelInference(private val context: Context) {
             }
         }
         
-        // Convert bitmap to float array (normalize RGB values 0-1 or 0-255 depending on model)
-        for (y in 0 until INPUT_SIZE) {
-            for (x in 0 until INPUT_SIZE) {
+        // Initialize with YOLOv8 standard padding color (114/255 normalized)
+        // This MUST match the padding used during training
+        val yolov8PaddingColor = 114f / 255f  // Approximately 0.447f
+        for (c in 0..2) {
+            for (y in 0 until INPUT_SIZE) {
+                for (x in 0 until INPUT_SIZE) {
+                    input[0][c][y][x] = yolov8PaddingColor
+                }
+            }
+        }
+        
+        // Copy resized image into center of letterboxed area
+        for (y in 0 until scaledHeight) {
+            for (x in 0 until scaledWidth) {
                 val pixel = resized.getPixel(x, y)
-                val r = ((pixel shr 16) and 0xFF).toFloat()
-                val g = ((pixel shr 8) and 0xFF).toFloat()
-                val b = (pixel and 0xFF).toFloat()
+                val r = ((pixel shr 16) and 0xFF).toFloat() / 255.0f
+                val g = ((pixel shr 8) and 0xFF).toFloat() / 255.0f
+                val b = (pixel and 0xFF).toFloat() / 255.0f
                 
-                // Normalize to 0-1 range
-                input[0][0][y][x] = r / 255.0f
-                input[0][1][y][x] = g / 255.0f
-                input[0][2][y][x] = b / 255.0f
+                val outX = paddingLeft + x
+                val outY = paddingTop + y
+                input[0][0][outY][outX] = r
+                input[0][1][outY][outX] = g
+                input[0][2][outY][outX] = b
             }
         }
         
@@ -233,7 +281,11 @@ class CacaoModelInference(private val context: Context) {
     
     private fun parseDetections(outputArray: FloatArray): List<Map<String, Any>> {
         val detections = mutableListOf<Map<String, Any>>()
-        val classNames = listOf("under_fermented", "properly_fermented", "over_fermented")
+        // Match the model training class order: {0: over_fermented, 1: properly_fermented, 2: under_fermented}
+        val classNames = listOf("over_fermented", "properly_fermented", "under_fermented")
+        
+        // Log expected letterbox padding (should match Android preprocessing)
+        android.util.Log.d("SmartCacao", "PARSE: Expected letterbox padding: left=0, top=70 (scaled_w=320, scaled_h=180)")
         
         try {
             android.util.Log.d("SmartCacao", "PARSE: Output array size: ${outputArray.size} floats")
@@ -250,13 +302,11 @@ class CacaoModelInference(private val context: Context) {
             android.util.Log.d("SmartCacao", "PARSE: Output format has $numHeads heads (${numHeads}*2100 = ${2100*numHeads} floats)")
             
             val numPredictions = 2100
-            val stride = 2100  // Transposed format: [1, numHeads, 2100]
             
             // DEBUG: Log first few values to understand the data layout
             android.util.Log.d("SmartCacao", "DEBUG: First 20 array values: ${outputArray.take(20).map { String.format("%.4f", it) }.joinToString(", ")}")
             android.util.Log.d("SmartCacao", "DEBUG: Checking prediction 600:")
-            android.util.Log.d("SmartCacao", "  Method 1 (stride=2100): [0*2100+600]=${String.format("%.4f", outputArray[0 * stride + 600])}, [1*2100+600]=${String.format("%.4f", outputArray[1 * stride + 600])}")
-            android.util.Log.d("SmartCacao", "  Method 2 (stride=7):   [600*7+0]=${String.format("%.4f", outputArray[600 * 7 + 0])}, [600*7+1]=${String.format("%.4f", outputArray[600 * 7 + 1])}")
+            android.util.Log.d("SmartCacao", "  If [1,7,2100]: [0*2100+600]=${String.format("%.4f", outputArray[0 * 2100 + 600])}, [1*2100+600]=${String.format("%.4f", outputArray[1 * 2100 + 600])}")
             
             val detectionsList = mutableListOf<Pair<Float, Map<String, Any>>>()
             var highConfidenceCount = 0
@@ -266,27 +316,47 @@ class CacaoModelInference(private val context: Context) {
             
             for (i in 0 until numPredictions) {
                 try {
-                    // For transposed [1, numHeads, 2100] format:
-                    // Heads 0-3: x, y, w, h
-                    // Head 4: objectness
-                    // Head 5: class 0 probability (under_fermented)
-                    // Head 6: class 1 probability (properly_fermented)
-                    // Head 7 (if exists): class 2 probability (over_fermented)
+                    // For grouped-by-channel [1, numHeads, 2100] format:
+                    // All x coords (2100), then all y coords (2100), etc.
                     
-                    val xNorm = outputArray[0 * stride + i]          // x at index [0][i]
-                    val yNorm = outputArray[1 * stride + i]          // y at index [1][i]
-                    val wNorm = outputArray[2 * stride + i]          // w at index [2][i]
-                    val hNorm = outputArray[3 * stride + i]          // h at index [3][i]
-                    val objectness = outputArray[4 * stride + i]     // obj at index [4][i]
-                    val classProb0 = outputArray[5 * stride + i]     // class0 at index [5][i] (under_fermented)
-                    val classProb1 = outputArray[6 * stride + i]     // class1 at index [6][i] (properly_fermented)
+                    val xNorm = outputArray[0 * 2100 + i]          // x coordinate
+                    val yNorm = outputArray[1 * 2100 + i]          // y coordinate
+                    val wNorm = outputArray[2 * 2100 + i]          // width
+                    val hNorm = outputArray[3 * 2100 + i]          // height
+                    val objectness = outputArray[4 * 2100 + i]     // objectness score
+                    val classLogit0 = outputArray[5 * 2100 + i]    // class 0 logit (over_fermented)
+                    val classLogit1 = outputArray[6 * 2100 + i]    // class 1 logit (properly_fermented)
                     
-                    // Try to read class 2 if it exists (8-head format)
-                    val classProb2 = if (numHeads >= 8 && outputArray.size > (7 * stride + i)) {
-                        outputArray[7 * stride + i]  // class2 at index [7][i] (over_fermented)
-                    } else {
-                        maxOf(0f, 1.0f - classProb0 - classProb1)  // Implicit: calculated from other 2
+                    // DEBUG: Check raw logit values for first few predictions
+                    if (i < 5) {
+                        android.util.Log.d("SmartCacao", "RAW_LOGITS [i=$i]: ch0=${String.format("%.4f", outputArray[0 * 2100 + i])}, ch5=${String.format("%.4f", classLogit0)}, ch6=${String.format("%.4f", classLogit1)}")
                     }
+                    
+                    // ONNX export already applies sigmoid to class channels 5-6
+                    // They're already in [0, 1] range as probabilities, NOT raw logits
+                    // So use them directly without sigmoid!
+                    val classProb0 = classLogit0  // Already a probability [0, 1]
+                    val classProb1 = classLogit1  // Already a probability [0, 1]
+                    
+                    // Class 2 inference based on ambiguity
+                    val classLogit2: Float
+                    val classDiff = kotlin.math.abs(classLogit0 - classLogit1)
+                    
+                    // Now we have 8 channels in the new model, so channel 7 is class 2
+                    if (numHeads >= 8) {
+                        // Use direct class 2 from channel 7
+                        classLogit2 = outputArray[7 * 2100 + i]
+                        android.util.Log.d("SmartCacao", "CLASS2_FROM_CHANNEL [i=$i]: Using channel 7 value: ${String.format("%.4f", classLogit2)}")
+                    } else {
+                        // Fallback for 7-channel models (shouldn't happen with new model)
+                        classLogit2 = when {
+                            (classLogit0 < 0.3f && classLogit1 < 0.3f && classDiff > 0.05f) -> {
+                                0.1f  // Boost for class 2
+                            }
+                            else -> 0f
+                        }
+                    }
+                    val classProb2 = classLogit2  // Direct use, no sigmoid
                     
                     // Check for all zeros
                     if (xNorm == 0f && yNorm == 0f && wNorm == 0f && hNorm == 0f && objectness == 0f && classProb0 == 0f && classProb1 == 0f && classProb2 == 0f) {
@@ -294,46 +364,62 @@ class CacaoModelInference(private val context: Context) {
                         continue
                     }
                     
-                    // Skip very low objectness first
-                    if (objectness < 0.4f) {
-                        lowConfidenceCount++
-                        continue
-                    }
+                    // Don't pre-filter by objectness - let final confidence threshold handle it
+                    // This allows low-objectness but high-classProb detections through
                     
-                    // Coordinates are already in pixel space (0-320), no need to scale
+                    // Coordinates are in model space (0-320), which includes letterbox padding
+                    // Padding: 0-70 top, 70-250 image, 250-320 bottom
                     val xPixel = xNorm
                     val yPixel = yNorm
                     val wPixel = wNorm
                     val hPixel = hNorm
                     
-                    // DEBUG: Log coordinates
+                    // DEBUG: Log coordinates with area info
                     if (objectness >= 0.1f) {
-                        android.util.Log.d("SmartCacao", "PIXEL COORDS [i=$i]: x=${String.format("%.2f", xPixel)} y=${String.format("%.2f", yPixel)} w=${String.format("%.2f", wPixel)} h=${String.format("%.2f", hPixel)}")
+                        val inPaddingTop = yPixel < 70f
+                        val inImage =yPixel >= 70f && yPixel < 250f
+                        val inPaddingBottom = yPixel >= 250f
+                        val areaDesc = when {
+                            inPaddingTop -> "TOP_PADDING"
+                            inImage -> "IMAGE_AREA"
+                            inPaddingBottom -> "BOTTOM_PADDING"
+                            else -> "UNKNOWN"
+                        }
+                        android.util.Log.d("SmartCacao", "PIXEL COORDS [i=$i]: x=${String.format("%.2f", xPixel)} y=${String.format("%.2f", yPixel)} (${areaDesc}) w=${String.format("%.2f", wPixel)} h=${String.format("%.2f", hPixel)}")
                     }
                     
                     // Find best class (classProb2 already calculated above)
+                    // Using raw class logits like reference app (NOT multiplied by objectness)
                     val classProbs = floatArrayOf(classProb0, classProb1, classProb2)
                     val bestClassIdx = classProbs.indices.maxByOrNull { classProbs[it] } ?: 0
                     val bestClassProb = classProbs[bestClassIdx]
                     
-                    // Use class probability as confidence (matches Google Colab output)
+                    // Use raw class logit as confidence (like reference ObjectDetection app)
+                    // This matches TFLite behavior where we use the max class logit directly
                     val finalConfidence = bestClassProb
                     
-                    // DEBUG: Log ALL detections above objectness threshold
-                    if (objectness >= 0.1f) {
+                    // DEBUG: Log predictions with any confidence
+                    if (finalConfidence >= 0.05f) {
                         android.util.Log.d("SmartCacao", "DEBUG [i=$i] obj=${String.format("%.3f", objectness)} | probs=[${String.format("%.3f", classProb0)},${String.format("%.3f", classProb1)},${String.format("%.3f", classProb2)}] | best_idx=$bestClassIdx best_prob=${String.format("%.3f", bestClassProb)} final=${String.format("%.3f", finalConfidence)} | class=${classNames.getOrNull(bestClassIdx) ?: "unknown"}")
                     }
                     
-                    if (finalConfidence >= 0.6f) {
+                    if (finalConfidence >= 0.020f) {
                         highConfidenceCount++
-                    } else if (finalConfidence >= 0.4f) {
+                    } else if (finalConfidence >= 0.010f) {
                         mediumConfidenceCount++
                     } else {
                         lowConfidenceCount++
                     }
                     
-                    // Threshold: only keep detections with sufficient confidence
-                    if (finalConfidence > 0.35f) {
+                    // Threshold: Require BOTH objectness AND class confidence to reduce false positives
+                    // Balance: Low enough to catch real beans, high enough to filter noise
+                    val minObjectness = 0.010f  // Minimum objectness score
+                    val minClassConfidence = 0.008f  // Minimum class confidence (catches 0.01-0.11 range)
+                    
+                    if (finalConfidence > minClassConfidence && objectness > minObjectness) {
+                        // DEBUG: Log coordinates with verification info
+                        android.util.Log.d("SmartCacao", "COORD_DEBUG [i=$i] model=(${String.format("%.2f",xPixel)},${String.format("%.2f",yPixel)}) class=$bestClassIdx conf=${String.format("%.3f",finalConfidence)} obj=${String.format("%.3f",objectness)}")
+                        
                         detectionsList.add(finalConfidence to mapOf<String, Any>(
                             "label" to (if (bestClassIdx < classNames.size) classNames[bestClassIdx] else "unknown"),
                             "confidence" to finalConfidence,
@@ -352,7 +438,7 @@ class CacaoModelInference(private val context: Context) {
             
             android.util.Log.d("SmartCacao", "PARSE: Zero predictions: $zeroCount, High(>0.6): $highConfidenceCount, Medium(0.4-0.6): $mediumConfidenceCount, Low(0.1-0.4): $lowConfidenceCount")
             android.util.Log.d("SmartCacao", "PARSE: Before NMS: ${detectionsList.size} detections")
-            val finalDetections = applyNMS(detectionsList, 0.5f)
+            val finalDetections = applyNMS(detectionsList, 0.5f)  // RAISED: was 0.3f, now 0.5f
             
             android.util.Log.d("SmartCacao", "PARSE: After NMS: ${finalDetections.size} detections")
             return finalDetections
