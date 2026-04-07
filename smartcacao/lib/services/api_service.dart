@@ -5,10 +5,10 @@ class ApiService {
   ApiService._();
 
   // For Android emulator
-  static const String baseUrl = 'http://localhost:8000/api';
+  // static const String baseUrl = 'http://localhost:8000/api';
 
   // For real phone later, change this to your PC's local IP:
-  // static const String baseUrl = 'http://192.168.1.12:8000/api';
+   static const String baseUrl = 'http://192.168.1.8:8000/api';
 
   static Future<void> syncUser({
     required String firebaseUid,
