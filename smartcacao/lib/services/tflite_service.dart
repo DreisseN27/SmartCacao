@@ -102,7 +102,7 @@ class TFLiteService {
   /// Parse detection results from native code
   List<Detection> _parseDetections(Map<dynamic, dynamic>? result) {
     final detections = <Detection>[];
-    const double confidenceThreshold = 0.008; // Balanced threshold to catch beans but filter noise
+    const double confidenceThreshold = 0.50;
     
     try {
       if (result == null) return detections;
@@ -125,6 +125,13 @@ class TFLiteService {
             final y = (det['y'] as num?)?.toDouble() ?? 0.0;
             final width = (det['width'] as num?)?.toDouble() ?? 0.0;
             final height = (det['height'] as num?)?.toDouble() ?? 0.0;
+            final polygon = ((det['polygon'] as List<dynamic>?) ?? [])
+              .whereType<Map<dynamic, dynamic>>()
+              .map((point) => (
+                  x: (point['x'] as num).toDouble(),
+                  y: (point['y'] as num).toDouble(),
+                ))
+              .toList();
             
             // DEBUG: Log raw values received from native
             print('  [PARSE] Detection received from native: x=$x, y=$y, w=$width, h=$height, conf=$confidence, label=${det['label']}');
@@ -137,6 +144,7 @@ class TFLiteService {
                 y: y,
                 width: width,
                 height: height,
+                polygon: polygon,
               ),
             );
           } else {
@@ -191,7 +199,7 @@ class TFLiteService {
       print('📊 Statistics:');
       print('  - Total detections: ${detections.length}');
       print('  - Under-fermented: ${fermentationCounts['under_fermented']}');
-      print('  - Properly-fermented: ${fermentationCounts['properly_fermented']}');
+      print('  - Properly Fermented: ${fermentationCounts['properly_fermented']}');
       print('  - Over-fermented: ${fermentationCounts['over_fermented']}');
       print('  - Average confidence: ${avgConfidence.toStringAsFixed(3)}');
 

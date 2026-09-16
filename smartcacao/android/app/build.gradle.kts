@@ -46,8 +46,8 @@ android {
 }
 
 dependencies {
-    // ONNX Runtime for model inference
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.1")
+    // TensorFlow Lite for mobile model inference
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
 }
 
 flutter {

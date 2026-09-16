@@ -5,6 +5,7 @@ class Detection {
   final double y;
   final double width;
   final double height;
+  final List<({double x, double y})> polygon;
 
   Detection({
     required this.label,
@@ -13,6 +14,7 @@ class Detection {
     required this.y,
     required this.width,
     required this.height,
+    this.polygon = const [],
   });
 
   /// Convert Detection to JSON for transmission or storage
@@ -24,6 +26,7 @@ class Detection {
       'y': y,
       'width': width,
       'height': height,
+      'polygon': polygon.map((point) => {'x': point.x, 'y': point.y}).toList(),
       'boundingBox': {
         'left': x - width / 2,
         'top': y - height / 2,
@@ -42,6 +45,13 @@ class Detection {
       y: (json['y'] as num).toDouble(),
       width: (json['width'] as num).toDouble(),
       height: (json['height'] as num).toDouble(),
+        polygon: ((json['polygon'] as List<dynamic>?) ?? [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((point) => (
+            x: (point['x'] as num).toDouble(),
+            y: (point['y'] as num).toDouble(),
+            ))
+          .toList(),
     );
   }
 

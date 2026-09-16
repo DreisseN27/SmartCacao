@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'camera_screen.dart';
 import 'history_screen.dart';
+import 'camera_screen.dart';
+import 'hardware_status_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,7 +15,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SmartCacao'),
+        title: const Text('SmartCacaov4'),
         centerTitle: true,
         elevation: 0,
       ),
@@ -29,20 +30,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.brown.shade700,
-                    Colors.brown.shade400,
-                  ],
+                  colors: [Colors.brown.shade700, Colors.brown.shade400],
                 ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.grain,
-                    size: 80,
-                    color: Colors.white,
-                  ),
+                  Icon(Icons.grain, size: 80, color: Colors.white),
                   const SizedBox(height: 16),
                   const Text(
                     'Cacao Bean Fermentation',
@@ -55,10 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 8),
                   const Text(
                     'Detection System',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.white70,
-                    ),
+                    style: TextStyle(fontSize: 18, color: Colors.white70),
                   ),
                 ],
               ),
@@ -89,7 +80,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const Text(
                             'SmartCacao uses advanced machine learning to analyze cacao bean fermentation levels. '
                             'Simply capture an image of your cacao beans and the system will determine their '
-                            'fermentation status: Under-fermented, Properly-fermented, or Over-fermented.',
+                            'fermentation status: Under-fermented, Over-fermented, or Properly Fermented.',
                             style: TextStyle(
                               fontSize: 14,
                               height: 1.6,
@@ -106,10 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Features
                   const Text(
                     'Features',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
 
@@ -154,19 +142,82 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.camera),
-                          SizedBox(width: 8),
-                          Text(
-                            'Scan Cacao Beans',
+                          const Icon(Icons.camera, color: Colors.white),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Scan Uncut Cacao Beans',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CameraScreen(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.brown.shade600,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.content_cut, color: Colors.white),
+                      label: const Text(
+                        'Scan Cut Cacao Beans',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HardwareStatusScreen(),
+                          ),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: const Icon(Icons.devices),
+                      label: const Text(
+                        'Check Hardware Status',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -250,11 +301,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Colors.brown.shade100,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            color: Colors.brown.shade700,
-            size: 32,
-          ),
+          child: Icon(icon, color: Colors.brown.shade700, size: 32),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -271,10 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 4),
               Text(
                 description,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ),
@@ -294,10 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text(
               'Model Information',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
             const SizedBox(height: 12),
             const Text('Model: YOLOv8n'),

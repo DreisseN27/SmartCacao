@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:image/image.dart' as img;
@@ -9,7 +10,9 @@ import '../utils/permission_utils.dart';
 import 'result_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  final bool startLiveDetectionMode;
+
+  const CameraScreen({super.key, this.startLiveDetectionMode = true});
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -32,6 +35,7 @@ class _CameraScreenState extends State<CameraScreen> {
   void initState() {
     super.initState();
     print('CameraScreen initState - starting permission and model initialization');
+    isLiveDetectionMode = widget.startLiveDetectionMode;
     requestPermissionsAndInitialize();
     loadModel();
   }
@@ -458,6 +462,19 @@ class _CameraScreenState extends State<CameraScreen> {
     super.dispose();
   }
 
+  String _getDisplayLabel(String internalLabel) {
+    switch (internalLabel) {
+      case 'under_fermented':
+        return 'Under-fermented';
+      case 'properly_fermented':
+        return 'Properly Fermented';
+      case 'over_fermented':
+        return 'Over-fermented';
+      default:
+        return internalLabel;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (controller == null) {
@@ -521,34 +538,13 @@ class _CameraScreenState extends State<CameraScreen> {
                         if (isLiveDetectionMode)
                           Positioned.fill(
                             child: CustomPaint(
-                              painter: DetectionPainter(liveDetections, tfliteService: tfliteService),
-                            ),
-                          ),
-                        // Grid overlay for composition guide
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: GridPainter(),
-                          ),
-                        ),
-                        // Center guide circle
-                        Center(
-                          child: Container(
-                            width: 200,
-                            height: 200,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withAlpha((0.7 * 255).toInt()),
-                                width: 2,
+                              painter: DetectionPainter(
+                                liveDetections,
+                                tfliteService: tfliteService,
+                                previewAspectRatio: controller!.value.aspectRatio,
                               ),
                             ),
-                            child: const Icon(
-                              Icons.grain,
-                              size: 60,
-                              color: Colors.white54,
-                            ),
                           ),
-                        ),
                         // Detection stats panel (only in live mode)
                         if (isLiveDetectionMode)
                           Positioned(
@@ -599,50 +595,35 @@ class _CameraScreenState extends State<CameraScreen> {
           Container(
             color: Colors.grey.shade900,
             padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Text(
-                  isLiveDetectionMode
-                      ? 'Position cacao beans within the circle\n(Real-time detection enabled)'
-                      : 'Position cacao beans within the circle\n(Tap Capture to analyze)',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: isProcessing ? null : captureImage,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.brown.shade700,
+                  disabledBackgroundColor: Colors.grey,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: isProcessing ? null : captureImage,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.brown.shade700,
-                      disabledBackgroundColor: Colors.grey,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isProcessing ? Icons.hourglass_bottom : Icons.camera,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      isProcessing ? 'Processing...' : 'Capture',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isProcessing ? Icons.hourglass_bottom : Icons.camera,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          isProcessing ? 'Processing...' : 'Capture',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -664,8 +645,26 @@ class _CameraScreenState extends State<CameraScreen> {
 class DetectionPainter extends CustomPainter {
   final List<Detection> detections;
   final TFLiteService? tfliteService;
+  final double previewAspectRatio;
 
-  DetectionPainter(this.detections, {this.tfliteService});
+  DetectionPainter(
+    this.detections, {
+    this.tfliteService,
+    required this.previewAspectRatio,
+  });
+
+  String _getDisplayLabel(String internalLabel) {
+    switch (internalLabel) {
+      case 'under_fermented':
+        return 'Under-fermented';
+      case 'properly_fermented':
+        return 'Properly Fermented';
+      case 'over_fermented':
+        return 'Over-fermented';
+      default:
+        return internalLabel;
+    }
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -677,35 +676,7 @@ class DetectionPainter extends CustomPainter {
       textDirection: TextDirection.ltr,
     );
 
-    const modelInputSize = 320.0; // Model was trained on 320x320
-
-    // Calculate the scale factor accounting for aspect ratio
-    // Camera preview maintains aspect ratio, so we need to find the visible area
-    final screenAspect = size.width / size.height;
-    final modelAspect = 1.0; // 320x320 is square
-    
-    print('📐 DetectionPainter: size=$size, aspect=${screenAspect.toStringAsFixed(2)}');
-    
-    // Calculate how much of the screen is actually used by the camera preview
-    late double scaleX, scaleY, offsetX, offsetY;
-    
-    if (screenAspect > modelAspect) {
-      // Screen is wider than model (common for portrait phones)
-      // Model will be constrained by height
-      scaleX = size.height; // Both scale by height
-      scaleY = size.height;
-      offsetX = (size.width - scaleX) / 2; // Center horizontally
-      offsetY = 0;
-    } else {
-      // Screen is taller than model (unusual, but handle it)
-      // Model will be constrained by width
-      scaleX = size.width;
-      scaleY = size.width;
-      offsetX = 0;
-      offsetY = (size.height - scaleY) / 2; // Center vertically
-    }
-    
-    print('📐 Scale: scaleX=$scaleX, scaleY=$scaleY, offsetX=$offsetX, offsetY=$offsetY');
+    const modelInputSize = 320.0;
 
     for (var idx = 0; idx < detections.length; idx++) {
       final detection = detections[idx];
@@ -716,7 +687,7 @@ class DetectionPainter extends CustomPainter {
       } else if (detection.label == 'properly_fermented') {
         paint.color = Colors.green;
       } else {
-        paint.color = Colors.orange;
+        paint.color = Colors.amber;
       }
 
       // Model coordinates are in 320x320 letterboxed space.
@@ -750,17 +721,64 @@ class DetectionPainter extends CustomPainter {
       final cameraW = (detection.width / modelInputSize) * cameraWidth;
       final cameraH = (detection.height / modelInputSize) * cameraHeight;
       
-      // Map camera coordinates to screen coordinates
-      // The preview is displayed as a square (384x384) within the canvas
-      // The canvas and camera both have 16:9 aspect ratio
-      // So the preview fills the entire canvas (384x598.2)
-      // NO PADDING NEEDED - just scale camera space directly to canvas space
-      
-      // Scale camera → canvas (maintaining aspect ratio perfectly)
-      final screenX = (cameraX / cameraWidth) * size.width;
-      final screenY = (cameraY / cameraHeight) * size.height;
-      final screenW = (cameraW / cameraWidth) * size.width;
-      final screenH = (cameraH / cameraHeight) * size.height;
+        // CameraImage is landscape while CameraPreview is portrait on the phone.
+        // Rotate normalized source coordinates, then apply the same cover crop as
+        // the preview instead of stretching the source directly to the canvas.
+        final sourceX = cameraX / cameraWidth;
+        final sourceY = cameraY / cameraHeight;
+        final sourceW = cameraW / cameraWidth;
+        final sourceH = cameraH / cameraHeight;
+        final isPortraitPreview = size.height > size.width && cameraWidth > cameraHeight;
+        final displayX = isPortraitPreview ? sourceY : sourceX;
+        final displayY = isPortraitPreview ? 1.0 - sourceX : sourceY;
+        final displayW = isPortraitPreview ? sourceH : sourceW;
+        final displayH = isPortraitPreview ? sourceW : sourceH;
+          // CameraPreview uses the controller's aspect ratio after its own
+          // orientation handling. Use that same ratio so the overlay shares the
+          // preview's crop instead of estimating it from the source frame.
+          final displayAspect = previewAspectRatio > 0
+            ? previewAspectRatio
+            : (isPortraitPreview ? cameraHeight / cameraWidth : cameraWidth / cameraHeight);
+          final previewWidth = math.max(size.width, size.height * displayAspect);
+          final previewHeight = math.max(size.height, size.width / displayAspect);
+        final previewOffsetX = (size.width - previewWidth) / 2;
+        final previewOffsetY = (size.height - previewHeight) / 2;
+        final screenX = previewOffsetX + displayX * previewWidth;
+        final screenY = previewOffsetY + displayY * previewHeight;
+        final screenW = displayW * previewWidth;
+        final screenH = displayH * previewHeight;
+
+        if (detection.polygon.length >= 3) {
+          Offset mapModelPoint(double modelPointX, double modelPointY) {
+            final pointCameraX = (modelPointX - paddingLeft) / scaledWidth * cameraWidth;
+            final pointCameraY = (modelPointY - paddingTop) / scaledHeight * cameraHeight;
+            final pointSourceX = pointCameraX / cameraWidth;
+            final pointSourceY = pointCameraY / cameraHeight;
+            final pointDisplayX = isPortraitPreview ? pointSourceY : pointSourceX;
+            final pointDisplayY = isPortraitPreview ? 1.0 - pointSourceX : pointSourceY;
+            return Offset(
+              previewOffsetX + pointDisplayX * previewWidth,
+              previewOffsetY + pointDisplayY * previewHeight,
+            );
+          }
+
+          final polygonPath = Path();
+          for (var pointIndex = 0; pointIndex < detection.polygon.length; pointIndex++) {
+            final point = detection.polygon[pointIndex];
+            final screenPoint = mapModelPoint(point.x, point.y);
+            if (pointIndex == 0) {
+              polygonPath.moveTo(screenPoint.dx, screenPoint.dy);
+            } else {
+              polygonPath.lineTo(screenPoint.dx, screenPoint.dy);
+            }
+          }
+          polygonPath.close();
+          final fillPaint = Paint()
+            ..style = PaintingStyle.fill
+            ..color = paint.color.withAlpha(55);
+          canvas.drawPath(polygonPath, fillPaint);
+          canvas.drawPath(polygonPath, paint);
+        }
 
       // Calculate bounding box corners (x,y are center coordinates)
       final left = screenX - screenW / 2;
@@ -806,7 +824,7 @@ class DetectionPainter extends CustomPainter {
       // Draw label text
       final confidenceStr = (detection.confidence * 100).toStringAsFixed(1);
       textPainter.text = TextSpan(
-        text: '${detection.label}\n$confidenceStr%',
+        text: '${_getDisplayLabel(detection.label)}\n$confidenceStr%',
         style: TextStyle(
           color: paint.color,
           fontSize: 12,
@@ -821,7 +839,7 @@ class DetectionPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DetectionPainter oldDelegate) {
-    return oldDelegate.detections.length != detections.length;
+    return oldDelegate.detections != detections;
   }
 }
 
